@@ -141,6 +141,9 @@ class _HobsonLogPageState extends State<HobsonLogPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: kJcbBlue,
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text('Connections'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
