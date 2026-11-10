@@ -833,6 +833,11 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
               bind.sessionCtrlAltDel(sessionId: widget.ffi.sessionId),
           onPrivacy: () => _hobsonTogglePrivacy(widget.ffi, widget.id, privacyOn),
           onClose: () => closeConnection(id: widget.id),
+          onScreenshot: () => bind.sessionTakeScreenshot(
+              sessionId: widget.ffi.sessionId,
+              display: widget.ffi.ffiModel.pi.currentDisplay < 0
+                  ? 0
+                  : widget.ffi.ffiModel.pi.currentDisplay),
         );
       });
     }

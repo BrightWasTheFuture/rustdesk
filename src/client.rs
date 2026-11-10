@@ -3821,7 +3821,7 @@ impl LoginConfigHandler {
         if display_name.is_empty() {
             display_name = crate::username();
         }
-        let display_name = display_name
+        let mut display_name = display_name
             .split_whitespace()
             .map(|word| {
                 word.chars()
@@ -3856,6 +3856,10 @@ impl LoginConfigHandler {
         } else {
             Default::default()
         };
+        if hbb_common::config::LocalConfig::get_option("hobson-intent") == "unlock" {
+            hbb_common::config::LocalConfig::set_option("hobson-intent".to_owned(), String::new());
+            display_name = format!("hobson-unlock:{display_name}");
+        }
         let mut lr = LoginRequest {
             username: pure_id,
             password: password.into(),

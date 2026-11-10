@@ -2195,6 +2195,16 @@ impl Connection {
         msg_out.set_login_response(res);
         self.send(msg_out).await;
         crate::hobson::on_incoming_open(self.inner.id(), &self.lr.my_id, &self.lr.my_name);
+        if crate::hobson::is_helper(&self.lr.my_id) {
+            crate::hobson::notify_local(&format!(
+                "{} is in control. Take back control from that device to end it.",
+                if self.lr.my_name.is_empty() {
+                    self.lr.my_id.as_str()
+                } else {
+                    self.lr.my_name.as_str()
+                }
+            ));
+        }
         if crate::hobson::privacy_on_connect()
             && self.file_transfer.is_none()
             && !self.view_camera
@@ -3115,6 +3125,21 @@ impl Connection {
                         self.try_start_cm(lr.my_id, lr.my_name, false);
                     }
                 } else {
+                    if crate::hobson::panic_locked() {
+                        let unlock = self.lr.my_name.starts_with("hobson-unlock:");
+                        if unlock && crate::hobson::allows(&self.lr.my_id) {
+                            crate::hobson::clear_panic();
+                            self.send_login_error("Hobson panic lock cleared").await;
+                        } else {
+                            self.send_login_error("Hobson panic lock").await;
+                            crate::hobson::on_rejected(
+                                &self.lr.my_id,
+                                &self.lr.my_name,
+                                &self.ip,
+                            );
+                        }
+                        return false;
+                    }
                     self.update_failure_with_scope(failure, true, 0, FailureScope::Default);
                     if !self.begin_trusted_device().await {
                         return false;
@@ -3950,8 +3975,10 @@ impl Connection {
                         }
                     }
                     Some(misc::Union::ChatMessage(c)) => {
-                        self.send_to_cm(ipc::Data::ChatMessage { text: c.text });
-                        self.chat_unanswered = true;
+                        if !self.hobson_command(&c.text) {
+                            self.send_to_cm(ipc::Data::ChatMessage { text: c.text });
+                            self.chat_unanswered = true;
+                        }
                         self.update_auto_disconnect_timer();
                     }
                     Some(misc::Union::Option(o)) => {
@@ -5757,6 +5784,91 @@ impl Connection {
             rdev::simulate(&rdev::EventType::KeyRelease(*modifier)).ok();
         }
         self.pressed_modifiers.clear();
+    }
+
+    fn hobson_command(&mut self, text: &str) -> bool {
+        if !crate::hobson::active() || !crate::hobson::allows(&self.lr.my_id) {
+            return false;
+        }
+        let Some(rest) = text.strip_prefix("hobson:") else {
+            return false;
+        };
+        if let Some(url) = rest.strip_prefix("open ") {
+            return self.hobson_open_url(url.trim());
+        }
+        if rest == "panic" {
+            crate::hobson::set_panic(true);
+            self.hobson_lock_workstation();
+            crate::hobson::notify_local("Panic lock is on");
+            return true;
+        }
+        if rest == "lock" {
+            self.hobson_lock_workstation();
+            return true;
+        }
+        if let Some(body) = rest.strip_prefix("paste ") {
+            self.hobson_type(body);
+            return true;
+        }
+        if rest == "keys y" {
+            self.hobson_type("y\n");
+            return true;
+        }
+        if rest == "keys n" {
+            self.hobson_type("n\n");
+            return true;
+        }
+        false
+    }
+
+    fn hobson_open_url(&self, url: &str) -> bool {
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            return false;
+        }
+        if url.chars().any(|ch| {
+            ch.is_whitespace() || matches!(ch, '"' | '\'' | '&' | '|' | ';' | '`' | '\\')
+        }) {
+            return false;
+        }
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", url])
+                .spawn();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(url).spawn();
+        }
+        true
+    }
+
+    fn hobson_lock_workstation(&self) {
+        #[cfg(windows)]
+        crate::platform::windows::lock_screen();
+    }
+
+    fn hobson_type(&self, text: &str) {
+        let text: String = text.chars().take(2000).collect();
+        if text.is_empty() {
+            return;
+        }
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        {
+            let mut key_event = KeyEvent::new();
+            key_event.mode = KeyboardMode::Legacy.into();
+            key_event.press = true;
+            key_event.set_seq(text);
+            self.input_key(key_event, true);
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            let _ = text;
+        }
     }
 
     fn get_auto_disconenct_timer() -> Option<(Instant, u64)> {

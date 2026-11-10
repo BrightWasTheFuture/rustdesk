@@ -1,14 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/mobile/pages/settings_page.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:get/get.dart';
 
+import 'command.dart';
 import 'config.dart';
 import 'devices.dart';
 import 'log_page.dart';
@@ -32,6 +35,10 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
   Timer? _poll;
   bool _relay = true;
   bool _privacy = false;
+  final _prompt = TextEditingController();
+  List<String> _clips = [];
+  String _alert = '';
+  String _freeSpace = '';
 
   @override
   void initState() {
@@ -46,6 +53,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _prompt.dispose();
     _poll?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     platformFFI.unregisterEventHandler('callback_query_onlines', 'hobson-home');
@@ -57,6 +65,10 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _queryOnline();
       _takeSharedFiles();
+      _takeSharedText();
+      _takePanicIntent();
+      _noteClipboard();
+      _loadAlert();
     }
   }
 
@@ -77,9 +89,15 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             ? config.privacyByDefault
             : privacyOption == 'Y';
         _error = '';
+        _clips = _readClips();
       });
       _queryOnline();
       _takeSharedFiles();
+      _takeSharedText();
+      _takePanicIntent();
+      _noteClipboard();
+      _loadAlert();
+      _loadFreeSpace();
     } catch (err) {
       if (mounted) setState(() => _error = '$err');
     }
@@ -138,8 +156,84 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     _sendFiles(picked, paths);
   }
 
-  void _connect(HobsonDevice device) {
+  Future<void> _connect(HobsonDevice device) async {
     if (!device.hasId || device.id == _myId) return;
+    if (_online[device.id] == false && device.canWake) {
+      await _wakeThenConnect(device);
+      return;
+    }
+    await _applyProfile(device);
+    if (!mounted) return;
+    connect(context, device.id);
+  }
+
+  Future<void> _wakeThenConnect(HobsonDevice device) async {
+    _toast('Waking ${device.name}. Connecting when it comes online.');
+    try {
+      await sendWakeOnLan(device);
+    } catch (err) {
+      _toast('Wake failed: $err');
+      return;
+    }
+    for (var i = 0; i < 30; i++) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+      _queryOnline();
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      if (_online[device.id] == true) {
+        await _applyProfile(device);
+        if (!mounted) return;
+        connect(context, device.id);
+        return;
+      }
+    }
+    _toast('${device.name} did not come online. Try Wake PC again.');
+  }
+
+  Future<void> _applyProfile(HobsonDevice device) async {
+    final fromPhone = isAndroid;
+    final quality = fromPhone
+        ? (device.qualityFromPhone.isEmpty ? 'low' : device.qualityFromPhone)
+        : (device.qualityFromDesktop.isEmpty
+            ? 'best'
+            : device.qualityFromDesktop);
+    if (fromPhone) {
+      await bind.mainSetLocalOption(key: kOptionTouchMode, value: 'Y');
+    }
+    HobsonCommand.helperActive = device.isHelper;
+    HobsonCommand.queue(
+        device.id,
+        HobsonCommand(
+          quality: quality,
+          helper: device.isHelper,
+        ));
+  }
+
+  Future<void> _sendCommand(HobsonDevice device, String chat,
+      {bool closeAfter = false}) async {
+    HobsonCommand.queue(
+        device.id, HobsonCommand(chat: chat, closeAfter: closeAfter));
+    if (!mounted) return;
+    connect(context, device.id);
+  }
+
+  Future<void> _panic() async {
+    await bind.mainSetLocalOption(key: 'hobson-panic', value: 'Y');
+    final others = _config?.devices
+            .where((device) =>
+                device.hasId && device.id != _myId && device.os == 'windows')
+            .toList() ??
+        [];
+    for (final device in others) {
+      await _sendCommand(device, 'hobson:panic', closeAfter: true);
+    }
+    await lockThisWindowsPc();
+    _toast('Panic lock is on. A listed device must unlock with the trust secret.');
+  }
+
+  Future<void> _unlock(HobsonDevice device) async {
+    await bind.mainSetLocalOption(key: 'hobson-intent', value: 'unlock');
+    if (!mounted) return;
     connect(context, device.id);
   }
 
@@ -157,6 +251,141 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     } catch (err) {
       _toast('Wake failed: $err');
     }
+  }
+
+  List<String> _readClips() {
+    final raw = bind.mainGetLocalOption(key: 'hobson-clips');
+    if (raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded.map((item) => item.toString()).where((s) => s.isNotEmpty).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> _noteClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim() ?? '';
+    if (text.isEmpty || (_clips.isNotEmpty && _clips.first == text)) return;
+    final limit = _config?.clipboardHistory ?? 10;
+    final next = [text, ..._clips.where((item) => item != text)]
+        .take(limit <= 0 ? 10 : limit)
+        .toList();
+    await bind.mainSetLocalOption(key: 'hobson-clips', value: jsonEncode(next));
+    if (mounted) setState(() => _clips = next);
+  }
+
+  Future<void> _loadAlert() async {
+    try {
+      final file = await hobsonAlertsFile();
+      if (!await file.exists()) return;
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! List || decoded.isEmpty) return;
+      final last = decoded.last;
+      if (last is Map && last['state'] == 'open') {
+        final text = (last['text'] ?? '').toString();
+        if (mounted && text.isNotEmpty) setState(() => _alert = text);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadFreeSpace() async {
+    final config = _config;
+    if (!isWindows || config == null || config.freeSpaceGb <= 0) return;
+    final bytes = await windowsFreeBytes();
+    if (bytes == null || !mounted) return;
+    final gb = bytes / (1024 * 1024 * 1024);
+    if (gb < config.freeSpaceGb) {
+      setState(() => _freeSpace =
+          'C: has ${gb.toStringAsFixed(1)} GB free. Threshold is ${config.freeSpaceGb} GB.');
+    }
+  }
+
+  HobsonDevice? _pc() {
+    HobsonDevice? other;
+    for (final device in _config?.devices ?? const <HobsonDevice>[]) {
+      if (!device.hasId || device.id == _myId || device.os != 'windows') {
+        continue;
+      }
+      if (device.slot == 'pc') return device;
+      other ??= device;
+    }
+    return other;
+  }
+
+  Future<void> _pastePrompt() async {
+    final text = _prompt.text.trim();
+    if (text.isEmpty) return;
+    final pc = _pc();
+    if (pc == null) {
+      _toast('The PC tile has no ID on this device.');
+      return;
+    }
+    final safe = text.replaceAll('\n', ' ');
+    await _sendCommand(pc, 'hobson:paste $safe');
+  }
+
+  Future<void> _answerAlert(String keys) async {
+    final pc = _pc();
+    if (pc == null) return;
+    setState(() => _alert = '');
+    await _sendCommand(pc, 'hobson:keys $keys', closeAfter: true);
+  }
+
+  Widget _alertCard() {
+    return Card(
+      color: Colors.orange.shade100,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_alert),
+            Row(
+              children: [
+                TextButton(onPressed: () => _answerAlert('y'), child: const Text('Approve')),
+                TextButton(onPressed: () => _answerAlert('n'), child: const Text('Deny')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _takeSharedText() async {
+    if (!isAndroid || _config == null) return;
+    final text = await gFFI.invokeMethodWithResult<String>('hobson_take_text');
+    final url = text?.trim() ?? '';
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return;
+    if (!mounted) return;
+    final targets = _config!.devices
+        .where((device) => device.hasId && device.id != _myId && device.os == 'windows')
+        .toList();
+    if (targets.isEmpty) return;
+    final picked = await showDialog<HobsonDevice>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Open link on'),
+        children: [
+          for (final device in targets)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, device),
+              child: Text(device.name),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    await _sendCommand(picked, 'hobson:open $url', closeAfter: true);
+  }
+
+  Future<void> _takePanicIntent() async {
+    if (!isAndroid) return;
+    final action = await gFFI.invokeMethodWithResult<String>('hobson_take_panic');
+    if (action == 'panic') await _panic();
   }
 
   void _toast(String text) {
@@ -266,6 +495,46 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
           _tile(context, device),
           const SizedBox(height: 12),
         ],
+        if (_alert.isNotEmpty) _alertCard(),
+        if (_freeSpace.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(_freeSpace, style: const TextStyle(color: Colors.orange)),
+          ),
+        TextField(
+          controller: _prompt,
+          decoration: const InputDecoration(
+            labelText: 'Prompt for the PC',
+            hintText: 'Typed here, pasted into the focused window on the PC',
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: _pastePrompt,
+            child: const Text('Paste into PC'),
+          ),
+        ),
+        if (_clips.isNotEmpty) ...[
+          Text('Clipboard', style: Theme.of(context).textTheme.titleSmall),
+          for (final clip in _clips)
+            ListTile(
+              dense: true,
+              title: Text(clip, maxLines: 2, overflow: TextOverflow.ellipsis),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: clip));
+                _toast(
+                    'Copied. A connected session receives it through clipboard sync.');
+              },
+            ),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton(
+            onPressed: _panic,
+            child: const Text('Panic lock'),
+          ),
+        ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Always use the relay'),
@@ -324,7 +593,11 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
               ],
             ),
             const SizedBox(height: 8),
-            Text(device.hasId ? 'ID ${device.id}' : 'ID not set yet'),
+            Text(!device.enabled
+                ? 'Disabled until you turn it on in hobson_devices.json'
+                : device.hasId
+                    ? 'ID ${device.id}'
+                    : 'ID not set yet'),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -338,6 +611,11 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
                   OutlinedButton(
                     onPressed: () => _wake(device),
                     child: const Text('Wake PC'),
+                  ),
+                if (device.hasId && !mine && device.os == 'windows')
+                  TextButton(
+                    onPressed: () => _unlock(device),
+                    child: const Text('Unlock'),
                   ),
               ],
             ),

@@ -98,7 +98,11 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Install id. `aapt dump badging` reports this, not the namespace.
+        // The namespace stays com.carriez.flutter_hbb so the Kotlin sources and
+        // the relative class names in AndroidManifest.xml keep compiling.
+        // Component class names in the APK therefore still start with
+        // com.carriez.flutter_hbb. That is the code package, not the app id.
         applicationId "com.hobson.remote"
         minSdkVersion 22
         targetSdkVersion 36

@@ -15,9 +15,19 @@ import java.io.File
  */
 object HobsonShare {
     private val paths = mutableListOf<String>()
+    private var sharedText: String = ""
+    private var panic = false
 
     fun capture(context: Context, intent: Intent?) {
         if (intent == null) return
+        if (intent.action == HobsonPanicTileService.ACTION) {
+            panic = true
+        }
+        intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
+            if (text.startsWith("http://") || text.startsWith("https://")) {
+                sharedText = text.trim()
+            }
+        }
         val uris = mutableListOf<Uri>()
         when (intent.action) {
             Intent.ACTION_SEND -> {
@@ -33,6 +43,18 @@ object HobsonShare {
                 copyToCache(context, uri)?.let { paths.add(it) }
             }
         }
+    }
+
+    fun takeText(): String {
+        val text = sharedText
+        sharedText = ""
+        return text
+    }
+
+    fun takePanic(): String {
+        if (!panic) return ""
+        panic = false
+        return "panic"
     }
 
     fun take(): List<String> {

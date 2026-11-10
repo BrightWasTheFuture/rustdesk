@@ -62,9 +62,12 @@ This branch turns the Flutter client into a private app for three devices.
 The window title and Android label are **Hobson Remote**. The Windows service,
 install directory, and config folder are **HobsonRemote** (no space): the
 installer rejects spaces in the application name. Android installs as
-`com.hobson.remote`, so it can sit next to the official RustDesk app. The
-first install is a new app; later updates still need the same
-`ANDROID_SIGNING_KEY` keystore.
+`com.hobson.remote` (`applicationId` in `flutter/android/app/build.gradle`),
+so it can sit next to the official RustDesk app. The Kotlin namespace stays
+`com.carriez.flutter_hbb`, which is why activity and service class names in
+the APK still use that prefix. `aapt dump badging` on the 1.5.3-3 APK reports
+`package: name='com.hobson.remote'`. The first install is a new app; later
+updates still need the same `ANDROID_SIGNING_KEY` keystore.
 
 ### Device list
 
@@ -145,6 +148,26 @@ HobsonRemote config directory. A blocked ID also raises a system notification
 Flutter UI for the new screen is `flutter/lib/hobson/`. Policy (allowlist,
 password, relay, privacy) is `src/hobson/`. Commit to `custom` and push a
 version tag to rebuild, as below.
+
+## Daily use
+
+These switches live in `flutter/assets/hobson_devices.json`.
+
+`idle_disconnect_minutes` uses RustDesk's existing inactivity timer (mouse and keyboard reset it). `0` leaves it off. `free_space_gb` warns on a Windows home screen when C: is below that many gigabytes. `keep_awake_processes` is the list of process names that hold a Windows wake lock while they are running. `clipboard_history` is how many local clipboard texts the home screen keeps.
+
+Each device can set `enabled` (default true), `role` (`helper` for a later Grok machine), `quality_from_phone`, and `quality_from_desktop` (`low`, `balanced`, or `best`). Connecting from the phone uses the phone quality (default `low`) and turns touch mode on. Connecting from a PC or laptop uses desktop quality (default `best`). A device with `"enabled": false` is shown but cannot be connected to. The Grok entry is that, with an empty ID, until you want it.
+
+View style, zoom, and the last monitor are the values RustDesk already stores per peer. After a network drop to a listed device, the session retries for about three minutes.
+
+Tapping an offline PC tile that has a MAC sends Wake-on-LAN and connects when the online query says it is up, or stops after about 90 seconds.
+
+**Panic lock** on the home screen (and the Android Quick Settings tile of the same name) marks this device so new sessions are refused, asks the other Windows PCs to lock, and locks this PC. **Unlock** on a Windows tile connects with the trust secret and clears the lock without starting a desktop session. A listed device can also send the chat commands `hobson:panic`, `hobson:lock`, `hobson:open https://...`, `hobson:paste ...`, and `hobson:keys y` or `hobson:keys n`.
+
+The prompt box sends `hobson:paste` into the focused window on the PC. Android's share sheet **Open on PC/Laptop** does the same for an `http` or `https` link, which the PC opens in the default browser. Approve and Deny on an agent alert send `y` or `n` and Enter. Those alerts are raised by `HobsonRemote.exe --hobson-notify "message"` (a Claude Code or Cursor hook can call that). The message is a Windows toast plus a card on the home screen of a running app. This is not UAC or the secure desktop; elevation there still uses RustDesk's own prompt.
+
+The session **Screenshot** button uses RustDesk's existing screenshot dialog (save or copy). On Android, copying the image into another app's share sheet is not wired yet. A helper device shows **Helper has control · Take back**, which disconnects, and the controlled PC raises a notification.
+
+Not in this round: monitor thumbnails, and live snapshots on the home tiles. Both need a background video stream per device.
 
 ## Syncing with upstream
 `git fetch upstream && git merge upstream/master` on `custom` (and bump the

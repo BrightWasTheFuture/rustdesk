@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'command.dart';
+
 /// Session controls kept for this private build. Callers supply the actions
 /// so this file does not import the shared client library (that library
 /// already imports the toolbar).
@@ -13,6 +15,7 @@ class HobsonSessionBar extends StatelessWidget {
     required this.onCad,
     required this.onPrivacy,
     required this.onClose,
+    required this.onScreenshot,
   });
 
   final bool privacyOn;
@@ -22,9 +25,11 @@ class HobsonSessionBar extends StatelessWidget {
   final VoidCallback onCad;
   final VoidCallback onPrivacy;
   final VoidCallback onClose;
+  final VoidCallback onScreenshot;
 
   @override
   Widget build(BuildContext context) {
+    final helper = HobsonCommand.helperActive;
     return Material(
       elevation: 6,
       borderRadius: BorderRadius.circular(8),
@@ -34,6 +39,14 @@ class HobsonSessionBar extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (helper)
+              TextButton(
+                onPressed: () {
+                  HobsonCommand.helperActive = false;
+                  onClose();
+                },
+                child: const Text('Helper has control · Take back'),
+              ),
             _button(
               tooltip: 'Fullscreen',
               icon: Icons.fullscreen,
@@ -58,6 +71,11 @@ class HobsonSessionBar extends StatelessWidget {
               tooltip: privacyOn ? 'Privacy screen on' : 'Blank physical screen',
               icon: privacyOn ? Icons.visibility_off : Icons.visibility,
               onPressed: onPrivacy,
+            ),
+            _button(
+              tooltip: 'Screenshot',
+              icon: Icons.photo_camera_outlined,
+              onPressed: onScreenshot,
             ),
             _button(
               tooltip: 'Disconnect',

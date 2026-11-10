@@ -39,6 +39,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:vector_math/vector_math.dart' show Vector2;
 
 import '../common.dart';
+import '../hobson/config.dart';
+import '../hobson/session_hooks.dart';
 import '../utils/image.dart' as img;
 import '../common/widgets/dialog.dart';
 import 'input_model.dart';
@@ -1005,6 +1007,16 @@ class FfiModel with ChangeNotifier {
     String title,
     String text,
   ) {
+    if (hobsonUiEnabled() &&
+        type == 'error' &&
+        title == 'Connection Error' &&
+        _pi.isSet.isTrue &&
+        _hobsonShouldResume(text)) {
+      _offlineReconnectStartTime ??= DateTime.now();
+      final elapsed =
+          DateTime.now().difference(_offlineReconnectStartTime!).inSeconds;
+      return elapsed < 180;
+    }
     if (type == 'error' &&
         title == 'Connection Error' &&
         text == 'Remote desktop is offline' &&
@@ -1028,6 +1040,17 @@ class FfiModel with ChangeNotifier {
       }
     }
     return false;
+  }
+
+  bool _hobsonShouldResume(String text) {
+    final lower = text.toLowerCase();
+    if (lower.contains('password') || lower.contains('panic')) return false;
+    return lower.contains('offline') ||
+        lower.contains('reset') ||
+        lower.contains('timeout') ||
+        lower.contains('relay') ||
+        lower.contains('10054') ||
+        lower.contains('104');
   }
 
   handleToast(Map<String, dynamic> evt, SessionID sessionId, String peerId) {
@@ -1421,6 +1444,7 @@ class FfiModel with ChangeNotifier {
       }
     } else if (connType == ConnType.defaultConn ||
         connType == ConnType.viewCamera) {
+      hobsonOnSessionReady(sessionId, peerId);
       List<Display> newDisplays = [];
       List<dynamic> displays = json.decode(evt['displays']);
       for (int i = 0; i < displays.length; ++i) {
