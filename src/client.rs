@@ -2990,7 +2990,7 @@ impl LoginConfigHandler {
             config::option2bool("force-always-relay", &self.get_option("force-always-relay"))
                 || force_relay;
         self.policy_relay = self.peer_relay || Config::is_proxy();
-        self.force_relay = self.policy_relay || use_ws();
+        self.force_relay = self.policy_relay || use_ws() || crate::hobson::relay_enabled();
         if let Some((real_id, server, key)) = &self.other_server {
             let other_server_key = self.get_option("other-server-key");
             if !other_server_key.is_empty() && key.is_empty() {
@@ -4696,6 +4696,13 @@ pub async fn handle_hash(
     }
     // last password
     let mut password = lc.read().unwrap().password.clone();
+    // Listed devices always present the shared secret, ahead of a saved password.
+    if let Some(plain) = crate::hobson::trust_password_for(&lc.read().unwrap().id) {
+        let mut hasher = Sha256::new();
+        hasher.update(plain.as_bytes());
+        hasher.update(&hash.salt);
+        password = hasher.finalize()[..].into();
+    }
     // preset password
     if password.is_empty() {
         if !password_preset.is_empty() {

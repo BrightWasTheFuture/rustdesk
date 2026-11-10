@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/common/widgets/toolbar.dart';
+import 'package:flutter_hbb/hobson/config.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/mobile/widgets/floating_mouse.dart';
 import 'package:flutter_hbb/mobile/widgets/floating_mouse_widgets.dart';
@@ -658,7 +659,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                     () => _showGestureHelp = !_showGestureHelp),
                               ),
                             ]) +
-                  (isWeb
+                  (isWeb || hobsonUiEnabled()
                       ? []
                       : <Widget>[
                           futureBuilder(
@@ -1349,6 +1350,18 @@ void showOptions(
             child: Text(translate('Lock canvas')),
             value: gFFI.canvasModel.locked,
             onChanged: (value) => gFFI.canvasModel.setLocked(value == true)));
+  }
+
+  if (hobsonUiEnabled()) {
+    viewStyleRadios = [];
+    imageQualityRadios = [];
+    codecRadios = [];
+    cursorToggles = [];
+    displayToggles = displayToggles
+        .where((entry) =>
+            entry.actionId == kShortcutActionToggleDisableClipboard ||
+            entry.actionId == kShortcutActionToggleEnableFileCopyPaste)
+        .toList();
   }
 
   List<TToggleMenu> privacyModeList = [];

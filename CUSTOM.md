@@ -56,9 +56,95 @@ The APK is signed with a private keystore stored as repo secrets
 `ANDROID_KEY_PASSWORD`. Keep the same keystore for future builds, otherwise Android
 will refuse to update the installed app (uninstall first).
 
-## Customising the UI
-The Flutter UI lives in `flutter/lib/` (desktop: `flutter/lib/desktop/`, mobile:
-`flutter/lib/mobile/`). Rust core is in `src/`. Commit to `custom` and re-run the workflow.
+## Hobson Remote
+
+This branch turns the Flutter client into a private app for three devices.
+The window title and Android label are **Hobson Remote**. The Windows service,
+install directory, and config folder are **HobsonRemote** (no space): the
+installer rejects spaces in the application name. Android installs as
+`com.hobson.remote`, so it can sit next to the official RustDesk app. The
+first install is a new app; later updates still need the same
+`ANDROID_SIGNING_KEY` keystore.
+
+### Device list
+
+Edit one file, then rebuild:
+
+`flutter/assets/hobson_devices.json`
+
+| Slot | Name | Hostname | RustDesk ID |
+|---|---|---|---|
+| pc | PC | DESKTOP-T5EC28K | `526130151` |
+| laptop | Laptop | DESKTOP-0FGJD6S | `199304064` |
+| phone | Pixel | Pixel 11 Pro XL | `1084254837` |
+
+The PC tile also has MAC `58-04-4F-F1-38-DF` for Wake-on-LAN on `192.168.0.x`.
+Rust (`src/hobson/`) and Flutter both read this file. To change an ID, edit
+the JSON and rebuild. Do not put the trust secret in this file.
+
+### Trust secret
+
+Listed devices accept each other with no prompt only when **both** are true:
+
+1. The peer's RustDesk ID is in the device list. That ID is self-reported in
+   the login message, so the list is a filter, not a proof of identity.
+2. The peer proves a shared secret. The secret is stored as this device's
+   permanent password. Login hashes it with the salt and challenge from the
+   controlled device, so the password is not sent in the clear. A connection
+   that only claims an allowlisted ID, or that sends no password, is refused
+   before any accept prompt, and the app raises an alert.
+
+The secret is compiled in. It is never committed.
+
+- Local build: copy `hobson/secret.example` to `hobson/secret` (gitignored)
+  and put the passphrase on one line, or export `HOBSON_TRUST_SECRET`.
+- GitHub Actions: set the repo secret `HOBSON_TRUST_SECRET` to the same
+  passphrase. `.github/workflows/flutter-build.yml` passes it into the build.
+  Pushing that workflow file needs a token with the `workflow` scope.
+
+Use the same secret for every device. A build with no secret still compiles,
+but trusted auto-accept stays off and incoming logins are refused.
+
+Changing the secret means rebuilding and reinstalling all three devices.
+Until they all have the new secret, they cannot connect to each other.
+
+### What the home screen does
+
+The launch screen is three tiles (PC, Laptop, Pixel) with online/offline from
+the existing peer online query, and one-tap connect. The gear opens the
+existing settings. Connections always use the relay unless you turn off
+**Always use the relay** on the home screen (that toggle is not written onto
+the peer, so you can turn it back on). On Windows, **Blank this screen for
+trusted sessions** turns on RustDesk privacy mode when a listed device
+connects. It is off until you enable it.
+
+The session toolbar keeps fullscreen, file transfer, clipboard, Ctrl+Alt+Del,
+privacy screen, and disconnect. Address book, account login, LAN discovery,
+rustdesk.com promotions, and the public update check are not shown. The
+update request to `api.rustdesk.com` is skipped. The API fallback stays the
+private server from `hbb_common`.
+
+Drag a file onto a desktop tile to open a file transfer and send it to that
+device's Downloads folder (or its home folder if Downloads cannot be opened).
+On Android, the share sheet entry **Send to PC/Laptop** copies the files and
+asks which listed device to send them to. The Quick Settings tile **Share
+screen** starts or stops the phone's screen share; the system capture consent
+dialog still appears the first time.
+
+**Wake PC** sends a Wake-on-LAN magic packet to `255.255.255.255` and
+`192.168.0.255`. It only works from a device on that LAN, and only if the
+PC's BIOS and NIC have Wake-on-LAN enabled.
+
+The history icon opens the connection log (time, device, duration, and
+blocked attempts). The log file is `hobson-connections.json` in the
+HobsonRemote config directory. A blocked ID also raises a system notification
+(Windows toast, Linux `notify-send`, Android notification).
+
+### Customising further
+
+Flutter UI for the new screen is `flutter/lib/hobson/`. Policy (allowlist,
+password, relay, privacy) is `src/hobson/`. Commit to `custom` and push a
+version tag to rebuild, as below.
 
 ## Syncing with upstream
 `git fetch upstream && git merge upstream/master` on `custom` (and bump the

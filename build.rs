@@ -90,7 +90,34 @@ fn install_android_deps() {
     println!("cargo:rustc-link-lib=OpenSLES");
 }
 
+fn export_hobson_secret() {
+    println!("cargo:rerun-if-env-changed=HOBSON_TRUST_SECRET");
+    println!("cargo:rerun-if-changed=hobson/secret");
+    let from_env = std::env::var("HOBSON_TRUST_SECRET").unwrap_or_default();
+    let secret = if !from_env.trim().is_empty() {
+        from_env
+    } else {
+        std::fs::read_to_string("hobson/secret").unwrap_or_default()
+    };
+    let secret = secret
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
+        .unwrap_or("")
+        .to_owned();
+    if secret.is_empty() {
+        println!("cargo:warning=HOBSON_TRUST_SECRET is unset; trusted auto-accept stays off until you set it");
+    } else {
+        println!(
+            "cargo:warning=HOBSON_TRUST_SECRET is set ({} characters, value not printed)",
+            secret.chars().count()
+        );
+    }
+    println!("cargo:rustc-env=HOBSON_TRUST_SECRET={secret}");
+}
+
 fn main() {
+    export_hobson_secret();
     hbb_common::gen_version();
     install_android_deps();
     #[cfg(all(windows, feature = "inline"))]

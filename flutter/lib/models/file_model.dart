@@ -12,6 +12,7 @@ import 'package:flutter_hbb/web/dummy.dart'
     if (dart.library.html) 'package:flutter_hbb/web/web_unique.dart';
 
 import '../consts.dart';
+import '../hobson/pending_send.dart';
 import '../utils/android_documents.dart';
 import 'model.dart';
 import 'platform_model.dart';
@@ -96,6 +97,41 @@ class FileModel {
     await evtLoop.onReady();
     if (!isWeb) await localController.onReady();
     await remoteController.onReady();
+    if (!isWeb) await _deliverHobsonFiles();
+  }
+
+  /// Files queued by a home-tile drop or an Android share, sent to Downloads
+  /// when that folder can be opened and to the remote home otherwise.
+  Future<void> _deliverHobsonFiles() async {
+    final id = parent.target?.id ?? '';
+    final paths = HobsonPendingSend.take(id);
+    if (paths.isEmpty) return;
+    final home = remoteController.options.value.home;
+    if (home.isNotEmpty) {
+      final windows = home.contains('\\');
+      final sep = windows ? '\\' : '/';
+      final trimmed =
+          home.endsWith(sep) ? home.substring(0, home.length - 1) : home;
+      final candidates = <String>[
+        if (windows) '$trimmed\\Downloads',
+        if (!windows) '$trimmed/Downloads',
+        if (!windows) '$trimmed/Download',
+      ];
+      for (final dir in candidates) {
+        if (await remoteController.openDirectory(dir)) break;
+      }
+    }
+    final items = SelectedItems(isLocal: true);
+    for (final filePath in paths) {
+      final name = path.basename(filePath);
+      if (name.isEmpty) continue;
+      items.add(Entry()
+        ..path = filePath
+        ..name = name
+        ..entryType = 4);
+    }
+    if (items.items.isEmpty) return;
+    await localController.sendFiles(items, remoteController.directoryData());
   }
 
   Future<void> close() async {

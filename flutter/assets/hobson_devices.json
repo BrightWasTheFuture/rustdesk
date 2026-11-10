@@ -1,0 +1,32 @@
+{
+  "_note": "Single device list for Hobson Remote. Edit ids here, then rebuild. Do not put the trust secret in this file.",
+  "app_name": "HobsonRemote",
+  "display_name": "Hobson Remote",
+  "relay_by_default": true,
+  "privacy_on_trusted_windows": false,
+  "devices": [
+    {
+      "slot": "pc",
+      "name": "PC",
+      "hostname": "DESKTOP-T5EC28K",
+      "id": "526130151",
+      "os": "windows",
+      "mac": "58-04-4F-F1-38-DF",
+      "lan_prefix": "192.168.0."
+    },
+    {
+      "slot": "laptop",
+      "name": "Laptop",
+      "hostname": "DESKTOP-0FGJD6S",
+      "id": "199304064",
+      "os": "windows"
+    },
+    {
+      "slot": "phone",
+      "name": "Pixel",
+      "hostname": "Pixel 11 Pro XL",
+      "id": "1084254837",
+      "os": "android"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/hobson/config.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/common/widgets/login.dart';
@@ -158,12 +159,14 @@ class TTextMenu {
   Widget? trailingIcon;
   bool divider;
   final String? actionId;
+  final String? hobsonKey;
   TTextMenu(
       {required this.child,
       required this.onPressed,
       this.trailingIcon,
       this.divider = false,
-      this.actionId});
+      this.actionId,
+      this.hobsonKey});
 
   Widget getChild() {
     if (trailingIcon != null) {
@@ -593,6 +596,7 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
     v.add(
       TTextMenu(
           child: Text(translate('Transfer file')),
+          hobsonKey: 'file',
           onPressed: () => connectWithToken(isFileTransfer: true)),
     );
     v.add(
@@ -778,6 +782,11 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
         actionId: kShortcutActionScreenshot,
       ));
     }
+  }
+  if (hobsonUiEnabled()) {
+    v.retainWhere((entry) =>
+        entry.actionId == kShortcutActionSendCtrlAltDel ||
+        entry.hobsonKey == 'file');
   }
   // fingerprint
   if (!(isDesktop || isWebDesktop)) {

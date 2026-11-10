@@ -9,6 +9,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/formatter/id_formatter.dart';
+import 'package:flutter_hbb/hobson/config.dart';
 import 'package:flutter_hbb/desktop/widgets/refresh_wrapper.dart';
 import 'package:flutter_hbb/desktop/widgets/tabbar_widget.dart';
 import 'package:flutter_hbb/main.dart';
@@ -3061,7 +3062,10 @@ int versionCmp(String v1, String v2) {
 }
 
 String getWindowName({WindowType? overrideType}) {
-  final name = bind.mainGetAppNameSync();
+  var name = bind.mainGetAppNameSync();
+  if (name == kHobsonAppName) {
+    name = kHobsonDisplayName;
+  }
   switch (overrideType ?? kWindowType) {
     case WindowType.Main:
       return name;
@@ -4106,6 +4110,7 @@ void earlyAssert() {
 }
 
 void checkUpdate() {
+  if (hobsonUiEnabled()) return;
   if (!isWeb) {
     if (!bind.isCustomClient()) {
       platformFFI.registerEventHandler(
