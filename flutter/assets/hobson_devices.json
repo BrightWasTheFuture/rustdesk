@@ -34,7 +34,8 @@
       "slot": "phone",
       "name": "Pixel",
       "hostname": "Pixel 11 Pro XL",
-      "id": "1084254837",
+      "id": "1374413193",
+      "aliases": ["1084254837"],
       "os": "android",
       "profile": "phone"
     },

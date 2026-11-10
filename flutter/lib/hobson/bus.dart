@@ -9,6 +9,8 @@ class HobsonBus {
   static final previews = ValueNotifier<Map<String, Uint8List>>(const {});
   static final windows = ValueNotifier<List<String>>(const []);
   static final windowFrame = ValueNotifier<Uint8List?>(null);
+  static final refusedId = ValueNotifier<String>('');
+  static final refusedName = ValueNotifier<String>('');
 
   static bool ingest(String peerId, String text) {
     if (!text.startsWith('hobson:')) return false;

@@ -55,6 +55,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     HobsonBus.clips.addListener(_onBus);
     HobsonBus.alert.addListener(_onBus);
     HobsonBus.previews.addListener(_onBus);
+    HobsonBus.refusedId.addListener(_onBus);
   }
 
   @override
@@ -65,6 +66,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     HobsonBus.clips.removeListener(_onBus);
     HobsonBus.alert.removeListener(_onBus);
     HobsonBus.previews.removeListener(_onBus);
+    HobsonBus.refusedId.removeListener(_onBus);
     WidgetsBinding.instance.removeObserver(this);
     platformFFI.unregisterEventHandler('callback_query_onlines', 'hobson-home');
     super.dispose();
@@ -79,6 +81,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
       _takePanicIntent();
       _noteClipboard();
       _loadAlert();
+      _loadRefused();
     }
   }
 
@@ -110,6 +113,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
       _noteClipboard();
       _loadAlert();
       _loadFreeSpace();
+      _loadRefused();
     } catch (err) {
       if (mounted) setState(() => _error = '$err');
     }
@@ -296,6 +300,25 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadRefused() async {
+    if (HobsonBus.refusedId.value.isNotEmpty) return;
+    try {
+      final file = await hobsonLogFile();
+      if (!await file.exists()) return;
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! List) return;
+      for (final item in decoded.reversed) {
+        if (item is Map && item['dir'] == 'denied') {
+          final id = (item['id'] ?? '').toString();
+          if (id.isEmpty) return;
+          HobsonBus.refusedId.value = id;
+          HobsonBus.refusedName.value = (item['name'] ?? '').toString();
+          return;
+        }
+      }
+    } catch (_) {}
+  }
+
   void _onBus() {
     if (!mounted) return;
     setState(() {
@@ -381,6 +404,34 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     if (pc == null) return;
     setState(() => _alert = '');
     await _sendCommand(pc, 'hobson:keys $keys', closeAfter: true);
+  }
+
+  Widget _refusedCard() {
+    final id = HobsonBus.refusedId.value;
+    final name = HobsonBus.refusedName.value;
+    return Card(
+      color: Colors.red.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Refused ID $id',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (name.isNotEmpty) Text(name),
+            const Text(
+                'This ID is not in hobson_devices.json. Add it, then rebuild.'),
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: id));
+                _toast('Copied refused ID $id');
+              },
+              child: const Text('Copy ID'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _alertCard() {
@@ -540,6 +591,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             ),
           ),
         const SizedBox(height: 12),
+        if (HobsonBus.refusedId.value.isNotEmpty) _refusedCard(),
         for (final device in config.devices) ...[
           _tile(context, device),
           const SizedBox(height: 12),

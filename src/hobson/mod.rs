@@ -111,6 +111,8 @@ struct Device {
     #[serde(default)]
     id: String,
     #[serde(default)]
+    aliases: Vec<String>,
+    #[serde(default)]
     os: String,
     #[serde(default)]
     mac: String,
@@ -172,9 +174,15 @@ pub fn install_identity() {
 fn known_ids() -> Vec<String> {
     let mut ids = Vec::new();
     for device in &file().devices {
-        let id = device.id();
-        if device.enabled && !id.is_empty() && !ids.iter().any(|have| have == id) {
-            ids.push(id.to_owned());
+        if !device.enabled {
+            continue;
+        }
+        let mut device_ids = vec![device.id().to_owned()];
+        device_ids.extend(device.aliases.iter().map(|alias| alias.trim().to_owned()));
+        for id in device_ids {
+            if !id.is_empty() && !ids.iter().any(|have| have == &id) {
+                ids.push(id);
+            }
         }
     }
     ids
@@ -314,7 +322,9 @@ pub fn on_incoming_closed(conn_id: i32) {
 
 pub fn on_rejected(id: &str, name: &str, ip: &str) {
     let label = if name.is_empty() { id } else { name };
-    let text = format!("Blocked a connection from {label} ({id})");
+    let text = format!(
+        "Refused ID {id}. Add it to flutter/assets/hobson_devices.json and rebuild. ({label})"
+    );
     conn_log::denied(id, name, ip);
     notify(&text);
     #[cfg(feature = "flutter")]
@@ -660,7 +670,8 @@ mod tests {
         assert_eq!(devices[0].hostname, "DESKTOP-T5EC28K");
         assert_eq!(devices[0].id(), "526130151");
         assert_eq!(devices[1].id(), "199304064");
-        assert_eq!(devices[2].id(), "1084254837");
+        assert_eq!(devices[2].id(), "1374413193");
+        assert_eq!(devices[2].aliases, vec!["1084254837"]);
         assert!(devices[0].mac.contains("58-04-4F-F1-38-DF"));
     }
 
@@ -668,6 +679,7 @@ mod tests {
     fn allowlist_rejects_unknown_and_blank_ids() {
         assert!(allows("526130151"));
         assert!(allows("199304064"));
+        assert!(allows("1374413193"));
         assert!(allows("1084254837"));
         assert!(allows(" 199304064"));
         assert!(!allows(""));
@@ -675,7 +687,7 @@ mod tests {
         assert!(!allows("19930406"));
         assert_eq!(
             whitelist_value(),
-            "526130151,199304064,1084254837"
+            "526130151,199304064,1374413193,1084254837"
         );
     }
 

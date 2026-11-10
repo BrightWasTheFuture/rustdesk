@@ -60,7 +60,7 @@ class HobsonLogEntry {
       case 'out':
         return event == 'end' ? 'Outgoing ended · $who' : 'Outgoing · $who';
       case 'denied':
-        return 'Blocked · $who';
+        return id.isEmpty ? 'Refused connection' : 'Refused ID $id';
       default:
         return who;
     }
@@ -71,7 +71,9 @@ class HobsonLogEntry {
         '${time.year.toString().padLeft(4, '0')}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     final bits = <String>[clock];
-    if (id.isNotEmpty) bits.add('ID $id');
+    if (direction == 'denied') {
+      bits.add('Add this ID to hobson_devices.json and rebuild');
+    } else if (id.isNotEmpty) bits.add('ID $id');
     if (event == 'end') bits.add(_formatDuration(seconds));
     if (ip.isNotEmpty) bits.add(ip);
     return bits.join('  ·  ');

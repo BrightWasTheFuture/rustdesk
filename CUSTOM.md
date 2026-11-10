@@ -105,7 +105,7 @@ Edit one file, then rebuild:
 |---|---|---|---|
 | pc | PC | DESKTOP-T5EC28K | `526130151` |
 | laptop | Laptop | DESKTOP-0FGJD6S | `199304064` |
-| phone | Pixel | Pixel 11 Pro XL | `1084254837` |
+| phone | Pixel | Pixel 11 Pro XL | `1374413193` (`1084254837` is still allowed as an alias) |
 
 The PC tile also has MAC `58-04-4F-F1-38-DF` for Wake-on-LAN on `192.168.0.x`.
 Rust (`src/hobson/`) and Flutter both read this file. To change an ID, edit
