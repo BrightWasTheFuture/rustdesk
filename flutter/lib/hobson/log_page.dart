@@ -74,7 +74,7 @@ class HobsonLogEntry {
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     final bits = <String>[clock];
     if (direction == 'denied') {
-      bits.add('Wrong password');
+      bits.add('Connection refused');
     } else if (id.isNotEmpty) bits.add('ID $id');
     if (event == 'end') bits.add(_formatDuration(seconds));
     if (ip.isNotEmpty) bits.add(ip);

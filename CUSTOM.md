@@ -142,28 +142,17 @@ starting the service. Do not start the service first and then change the ID.
 Rust (`src/hobson/`) and Flutter both read this file. To change an ID, edit
 the JSON and rebuild. Do not put the trust secret in this file.
 
+### SECURITY
+
+Any Hobson install can control any other Hobson install by typing its ID. There is no password and no Accept click. Give this build only to people you trust.
+
 ### Trust secret
 
 The home screen has **Connect to ID**. Any ID can be typed. Recent IDs stay on the device. The tiles are the machines you use every day.
 
-Listed devices still auto-accept when **both** are true:
+Every incoming connection is accepted. The peer's ID is not checked. Unlisted connections are still written to the connection log and shown on the home screen.
 
-1. The peer's RustDesk ID is in the device list. That ID is self-reported in
-   the login message, so the list is a filter, not a proof of identity.
-2. The peer proves the shared secret. Login hashes it with the salt and
-   challenge, so it is not sent in the clear. The secret is not the device
-   password.
-
-Anyone else connects with the target's ID and its device password. Approve
-mode is `password`, so there is no Accept click. Each install creates its own
-permanent device password on first run (24 characters) and shows it on the
-home screen with Copy and Change. That password is stored separately from
-`HOBSON_TRUST_SECRET`. An unlisted peer that sends the trust secret is
-refused. Repeated failures from the same IP or the same ID lock out with a
-backoff that starts at one minute and doubles, up to one hour. Panic unlock,
-clipboard sync, helper control, previews, the title watcher, and
-approve-on-phone stay limited to listed devices. Unlisted connections are
-marked in the connection log and on the home screen.
+`HOBSON_TRUST_SECRET` and the device list are not required to connect. They only gate the extra features: panic unlock, clipboard sync, helper control, previews, the title watcher, and approve-on-phone. The list compares the ID the peer reports, so it is a filter, not a proof of identity.
 
 The secret is compiled in. It is never committed.
 
@@ -173,11 +162,12 @@ The secret is compiled in. It is never committed.
   passphrase. `.github/workflows/flutter-build.yml` passes it into the build.
   Pushing that workflow file needs a token with the `workflow` scope.
 
-Use the same secret for every device. A build with no secret still compiles,
-but trusted auto-accept stays off and incoming logins are refused.
+Use the same secret for every device. A build with no secret still compiles
+and still accepts connections by ID. The extra features above stay off until
+the secret is set.
 
-Changing the secret means rebuilding and reinstalling all three devices.
-Until they all have the new secret, they cannot connect to each other.
+Changing the secret means rebuilding and reinstalling every device that should
+keep those extra features. Connections keep working while the secret differs.
 
 ### What the home screen does
 
@@ -214,7 +204,7 @@ HobsonRemote config directory. A blocked ID also raises a system notification
 ### Customising further
 
 Flutter UI for the new screen is `flutter/lib/hobson/`. Policy (allowlist,
-password, relay, privacy) is `src/hobson/`. Commit to `custom` and push a
+incoming accept, relay, privacy) is `src/hobson/`. Commit to `custom` and push a
 version tag to rebuild, as below.
 
 ## Daily use

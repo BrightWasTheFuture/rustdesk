@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
@@ -42,8 +41,6 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
   final _prompt = TextEditingController();
   final _peerId = TextEditingController();
   List<String> _recentIds = [];
-  String _devicePassword = '';
-  Timer? _passwordTimer;
   List<String> _clips = [];
   String _alert = '';
   String _freeSpace = '';
@@ -62,15 +59,12 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     HobsonBus.previews.addListener(_onBus);
     HobsonBus.refusedId.addListener(_onBus);
     HobsonBus.unlistedId.addListener(_onBus);
-    _passwordTimer =
-        Timer.periodic(const Duration(seconds: 2), (_) => _loadDevicePassword());
   }
 
   @override
   void dispose() {
     _prompt.dispose();
     _peerId.dispose();
-    _passwordTimer?.cancel();
     _poll?.cancel();
     _syncTimer?.cancel();
     HobsonBus.clips.removeListener(_onBus);
@@ -126,7 +120,6 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
       _loadAlert();
       _loadFreeSpace();
       _loadRefused();
-      _loadDevicePassword();
     } catch (err) {
       if (mounted) setState(() => _error = '$err');
     }
@@ -201,31 +194,6 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     final next = [id, ..._recentIds.where((item) => item != id)].take(8).toList();
     await bind.mainSetLocalOption(key: 'hobson-recent-ids', value: jsonEncode(next));
     if (mounted) setState(() => _recentIds = next);
-  }
-
-  Future<void> _loadDevicePassword() async {
-    final next = await bind.mainGetOption(key: 'hobson-device-password');
-    if (mounted && next != _devicePassword) {
-      setState(() => _devicePassword = next);
-    }
-  }
-
-  String _randomDevicePassword() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-    final random = Random.secure();
-    return List.generate(24, (_) => chars[random.nextInt(chars.length)]).join();
-  }
-
-  Future<void> _changeDevicePassword() async {
-    final next = _randomDevicePassword();
-    final ok = await bind.mainSetPermanentPasswordWithResult(password: next);
-    if (!ok) {
-      _toast('Could not change the device password');
-      return;
-    }
-    await bind.mainSetOption(key: 'hobson-device-password', value: next);
-    if (mounted) setState(() => _devicePassword = next);
-    _toast('Device password changed');
   }
 
   Future<void> _connectTyped() async {
@@ -492,8 +460,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             Text('Unlisted ID $id',
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             if (name.isNotEmpty) Text(name),
-            const Text(
-                'This device is not in the list. It connected with the device password.'),
+            const Text('This device is not in the list. It connected by ID.'),
           ],
         ),
       ),
@@ -513,7 +480,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             Text('Refused ID $id',
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             if (name.isNotEmpty) Text(name),
-            const Text('The password was wrong.'),
+            const Text('This device refused the connection.'),
             TextButton(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: id));
@@ -709,28 +676,6 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
                   },
                 ),
             ],
-          ),
-        if (_devicePassword.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text('Device password  $_devicePassword'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: _devicePassword));
-                    _toast('Copied device password');
-                  },
-                  child: const Text('Copy'),
-                ),
-                TextButton(
-                  onPressed: _changeDevicePassword,
-                  child: const Text('Change'),
-                ),
-              ],
-            ),
           ),
         if (HobsonBus.unlistedId.value.isNotEmpty) _unlistedCard(),
         if (HobsonBus.refusedId.value.isNotEmpty) _refusedCard(),

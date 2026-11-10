@@ -106,7 +106,7 @@ fn export_hobson_secret() {
         .unwrap_or("")
         .to_owned();
     if secret.is_empty() {
-        println!("cargo:warning=HOBSON_TRUST_SECRET is unset; trusted auto-accept stays off until you set it");
+        println!("cargo:warning=HOBSON_TRUST_SECRET is unset; connections still accept by ID, listed extras stay off");
     } else {
         println!(
             "cargo:warning=HOBSON_TRUST_SECRET is set ({} characters, value not printed)",
