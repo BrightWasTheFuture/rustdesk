@@ -1,4 +1,4 @@
-//! Private three-device policy for Hobson Remote.
+//! Private device policy for JCB Remote.
 //!
 //! The device list is `flutter/assets/hobson_devices.json` (compiled into the
 //! binary). The shared trust secret is **not** in that file. `build.rs` reads
@@ -12,8 +12,8 @@
 //! a proof.
 //!
 //! The Windows install name cannot contain a space (`validate_install_app_name`),
-//! so the service and config directory use `HobsonRemote`. The window title
-//! and Android label use `Hobson Remote`.
+//! so the service and config directory use `JCBRemote`. The window title
+//! and Android label use `JCB Remote`.
 
 #[path = "log.rs"]
 mod conn_log;
@@ -88,11 +88,11 @@ fn default_preview_seconds() -> u64 {
 }
 
 fn default_app_name() -> String {
-    "HobsonRemote".to_owned()
+    "JCBRemote".to_owned()
 }
 
 fn default_display_name() -> String {
-    "Hobson Remote".to_owned()
+    "JCB Remote".to_owned()
 }
 
 fn default_true() -> bool {
@@ -144,7 +144,7 @@ fn file() -> &'static File {
     FILE.get_or_init(|| match serde_json::from_str::<File>(DEVICES_JSON) {
         Ok(file) => file,
         Err(err) => {
-            eprintln!("Hobson Remote device list failed to parse: {err}");
+            eprintln!("JCB Remote device list failed to parse: {err}");
             File {
                 app_name: default_app_name(),
                 display_name: default_display_name(),
@@ -169,8 +169,61 @@ pub fn active() -> bool {
     true
 }
 
+pub fn product_name() -> String {
+    file().display_name.clone()
+}
+
 pub fn install_identity() {
     *config::APP_NAME.write().unwrap() = file().app_name.clone();
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    migrate_previous_config();
+}
+
+const PREVIOUS_APP_NAME: &str = "HobsonRemote";
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn migrate_previous_config() {
+    let new_name = file().app_name.clone();
+    if new_name == PREVIOUS_APP_NAME {
+        return;
+    }
+    *config::APP_NAME.write().unwrap() = new_name.clone();
+    let new_file = config::Config::file();
+    if new_file.exists() {
+        return;
+    }
+    *config::APP_NAME.write().unwrap() = PREVIOUS_APP_NAME.to_owned();
+    let old_file = config::Config::file();
+    *config::APP_NAME.write().unwrap() = new_name.clone();
+    let Some(old_dir) = old_file.parent() else {
+        return;
+    };
+    let Some(new_dir) = new_file.parent() else {
+        return;
+    };
+    if !old_dir.is_dir() {
+        return;
+    }
+    if std::fs::create_dir_all(new_dir).is_err() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(old_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let dest = new_dir.join(name.replace(PREVIOUS_APP_NAME, &new_name));
+        if dest.exists() {
+            continue;
+        }
+        let _ = std::fs::copy(&path, dest);
+    }
 }
 
 fn known_ids() -> Vec<String> {
@@ -687,7 +740,8 @@ mod tests {
         assert_eq!(devices[3].kind, "server");
         assert!(!devices[4].enabled);
         assert_eq!(devices[4].role, "helper");
-        assert_eq!(file().app_name, "HobsonRemote");
+        assert_eq!(file().app_name, "JCBRemote");
+        assert_eq!(file().display_name, "JCB Remote");
         assert_eq!(devices[0].hostname, "DESKTOP-T5EC28K");
         assert_eq!(devices[0].id(), "526130151");
         assert_eq!(devices[1].id(), "199304064");

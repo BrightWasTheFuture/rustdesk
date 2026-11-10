@@ -1,10 +1,10 @@
-# Hobson Remote only: Windows x64 (portable exe + msi), Linux x86_64 deb, and Android arm64 APK.
+# JCB Remote only: Windows x64 (portable exe + msi), Linux x86_64 deb, and Android arm64 APK.
 # Tag pushes matching hobson-* publish a prerelease. workflow_dispatch builds
 # the same artifacts without creating a release.
 #
 # Upstream Flutter Tag Build is unchanged. This file is the short path.
 
-name: Hobson build
+name: JCB build
 
 on:
   workflow_dispatch:
@@ -223,10 +223,10 @@ jobs:
           sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/HobsonRemote.exe
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/JCBRemote.exe
           popd
           mkdir -p ./dist
-          mv ./target/release/rustdesk-portable-packer.exe ./dist/hobson-remote-${{ github.ref_name }}-x86_64.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./dist/jcb-remote-${{ github.ref_name }}-x86_64.exe
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
@@ -234,12 +234,12 @@ jobs:
       - name: Build msi
         run: |
           pushd ./res/msi
-          python preprocess.py --arp --app-name HobsonRemote -d ../../rustdesk
+          python preprocess.py --arp --app-name JCBRemote -d ../../rustdesk
           nuget restore msi.sln
           msbuild msi.sln -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
           $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
           New-Item -ItemType Directory -Force -Path ../../dist | Out-Null
-          mv $msi.FullName ../../dist/hobson-remote-${{ github.ref_name }}-x86_64.msi
+          mv $msi.FullName ../../dist/jcb-remote-${{ github.ref_name }}-x86_64.msi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -373,12 +373,12 @@ jobs:
           flutter build apk --release --target-platform android-arm64 --split-per-abi
           popd
           mkdir -p signed-apk
-          cp flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "signed-apk/hobson-remote-${{ github.ref_name }}-aarch64.apk"
+          cp flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "signed-apk/jcb-remote-${{ github.ref_name }}-aarch64.apk"
 
       - name: Check APK package id
         run: |
           set -euo pipefail
-          apk="signed-apk/hobson-remote-${{ github.ref_name }}-aarch64.apk"
+          apk="signed-apk/jcb-remote-${{ github.ref_name }}-aarch64.apk"
           tools=$(ls -d /usr/local/lib/android/sdk/build-tools/* | tail -n 1)
           if [ -x "$tools/aapt" ]; then
             badging=$("$tools/aapt" dump badging "$apk" | head -n 1)
@@ -389,7 +389,7 @@ jobs:
           # applicationId in flutter/android/app/build.gradle. The namespace
           # stays com.carriez.flutter_hbb, so component class names still use
           # that prefix. The install id is this package name.
-          printf '%s\n' "$badging" | grep -q "package: name='com.hobson.remote'"
+          printf '%s\n' "$badging" | grep -q "package: name='com.jcb.remote'"
 
       - name: Setup sign tool version
         id: sign-tools
@@ -418,7 +418,7 @@ jobs:
         if: env.ANDROID_SIGNING_KEY != ''
         run: |
           mkdir -p dist
-          cp "${{ steps.sign.outputs.signedReleaseFile }}" "dist/hobson-remote-${{ github.ref_name }}-aarch64-signed.apk"
+          cp "${{ steps.sign.outputs.signedReleaseFile }}" "dist/jcb-remote-${{ github.ref_name }}-aarch64-signed.apk"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -500,7 +500,7 @@ jobs:
           python3 ./build.py --flutter --hwcodec
           mkdir -p dist
           deb=$(ls rustdesk-*.deb | head -n 1)
-          mv "$deb" "dist/hobson-remote-${{ github.ref_name }}-x86_64.deb"
+          mv "$deb" "dist/jcb-remote-${{ github.ref_name }}-x86_64.deb"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -528,5 +528,5 @@ jobs:
           files: dist/*
           generate_release_notes: false
           body: |
-            Hobson Remote build for ${{ github.ref_name }}.
+            JCB Remote build for ${{ github.ref_name }}.
             Windows x64 portable exe and msi, the Linux x86_64 deb, plus the signed Android arm64 APK when ANDROID_SIGNING_KEY is set.

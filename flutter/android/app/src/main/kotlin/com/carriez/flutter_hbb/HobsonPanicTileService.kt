@@ -43,6 +43,6 @@ class HobsonPanicTileService : TileService() {
     }
 
     companion object {
-        const val ACTION = "com.hobson.remote.PANIC"
+        const val ACTION = "com.jcb.remote.PANIC"
     }
 }

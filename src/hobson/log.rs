@@ -35,7 +35,7 @@ fn append(entry: Value) {
     let path = path();
     if let Some(dir) = path.parent() {
         if let Err(err) = fs::create_dir_all(dir) {
-            log::warn!("Hobson connection log directory: {err}");
+            log::warn!("JCB connection log directory: {err}");
             return;
         }
     }
@@ -49,7 +49,7 @@ fn append(entry: Value) {
         events.drain(0..drop_n);
     }
     if let Err(err) = fs::write(&path, serde_json::to_vec(&events).unwrap_or_default()) {
-        log::warn!("Hobson connection log write: {err}");
+        log::warn!("JCB connection log write: {err}");
     }
 }
 

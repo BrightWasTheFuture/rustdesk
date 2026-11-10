@@ -62,7 +62,7 @@ object HobsonShare {
         val file = File(path)
         if (!file.exists()) return false
         return try {
-            val uri = FileProvider.getUriForFile(context, "com.hobson.remote.fileprovider", file)
+            val uri = FileProvider.getUriForFile(context, "com.jcb.remote.fileprovider", file)
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "image/png"
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -118,7 +118,7 @@ object HobsonNotify {
     fun show(context: Context, title: String, text: String) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL, "Hobson Remote", NotificationManager.IMPORTANCE_HIGH)
+            val channel = NotificationChannel(CHANNEL, "JCB Remote", NotificationManager.IMPORTANCE_HIGH)
             manager.createNotificationChannel(channel)
         }
         val notification = NotificationCompat.Builder(context, CHANNEL)

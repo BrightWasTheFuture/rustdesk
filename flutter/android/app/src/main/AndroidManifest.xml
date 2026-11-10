@@ -49,7 +49,7 @@
             android:name=".InputService"
             android:enabled="true"
             android:exported="false"
-            android:label="Hobson Remote Input"
+            android:label="JCB Remote Input"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -128,7 +128,7 @@
 
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.hobson.remote.fileprovider"
+            android:authorities="com.jcb.remote.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

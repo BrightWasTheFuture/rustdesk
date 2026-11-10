@@ -3081,9 +3081,9 @@ impl Connection {
                     let unlock = lr.my_name.starts_with("hobson-unlock:");
                     if unlock && crate::hobson::allows(&lr.my_id) {
                         crate::hobson::clear_panic();
-                        self.send_login_error("Hobson panic lock cleared").await;
+                        self.send_login_error("JCB panic lock cleared").await;
                     } else {
-                        self.send_login_error("Hobson panic lock").await;
+                        self.send_login_error("JCB panic lock").await;
                         crate::hobson::on_rejected(&lr.my_id, &lr.my_name, &self.ip);
                     }
                     return false;
@@ -3163,9 +3163,9 @@ impl Connection {
                         let unlock = self.lr.my_name.starts_with("hobson-unlock:");
                         if unlock && crate::hobson::allows(&self.lr.my_id) {
                             crate::hobson::clear_panic();
-                            self.send_login_error("Hobson panic lock cleared").await;
+                            self.send_login_error("JCB panic lock cleared").await;
                         } else {
-                            self.send_login_error("Hobson panic lock").await;
+                            self.send_login_error("JCB panic lock").await;
                             crate::hobson::on_rejected(
                                 &self.lr.my_id,
                                 &self.lr.my_name,

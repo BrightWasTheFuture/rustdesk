@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'config.dart';
 
 /// Same file the Rust side writes. Desktop paths follow the `directories`
-/// crate (`ProjectDirs::config_dir` for app name `HobsonRemote`). Android
+/// crate (`ProjectDirs::config_dir` for app name `JCBRemote`). Android
 /// uses the documents directory passed to `mainInit` as `APP_DIR`.
 Future<File> hobsonAlertsFile() async {
   final log = await hobsonLogFile();
