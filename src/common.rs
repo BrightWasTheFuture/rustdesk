@@ -1308,7 +1308,8 @@ fn get_api_server_(api: String, custom: String) -> String {
             return format!("http://{}", s);
         }
     }
-    "https://admin.rustdesk.com".to_owned()
+    // Custom build: never fall back to the public RustDesk API server.
+    "http://65.108.148.37:21114".to_owned()
 }
 
 #[inline]
