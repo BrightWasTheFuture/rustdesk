@@ -1,0 +1,415 @@
+# Hobson Remote only: Windows x64 (portable exe + msi) and Android arm64 APK.
+# Tag pushes matching hobson-* publish a prerelease. workflow_dispatch builds
+# the same artifacts without creating a release.
+#
+# Upstream Flutter Tag Build is unchanged. This file is the short path.
+
+name: Hobson build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "hobson-*"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: hobson-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_VERSION: "1.75"
+  CARGO_NDK_VERSION: "3.1.2"
+  CARGO_EXPAND_VERSION: "1.0.95"
+  FLUTTER_RUST_BRIDGE_VERSION: "1.80.1"
+  LLVM_VERSION: "15.0.6"
+  FLUTTER_VERSION: "3.24.5"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  NDK_VERSION: "r28c"
+  HOBSON_TRUST_SECRET: ${{ secrets.HOBSON_TRUST_SECRET }}
+  ANDROID_SIGNING_KEY: ${{ secrets.ANDROID_SIGNING_KEY }}
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+jobs:
+  bridge:
+    name: flutter-rust-bridge
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang cmake g++ git libclang-dev libgtk-3-dev llvm-dev nasm ninja-build pkg-config
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: hobson-bridge
+          cache-on-failure: true
+
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        with:
+          path: ~/.cargo/bin
+          key: hobson-cargo-bins-${{ env.FLUTTER_RUST_BRIDGE_VERSION }}-${{ env.CARGO_EXPAND_VERSION }}
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: "3.22.3"
+          cache: true
+
+      - name: Generate bridge
+        shell: bash
+        run: |
+          if ! command -v cargo-expand >/dev/null; then
+            cargo install cargo-expand --version ${{ env.CARGO_EXPAND_VERSION }} --locked
+          fi
+          if ! command -v flutter_rust_bridge_codegen >/dev/null; then
+            cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_VERSION }} --features uuid --locked
+          fi
+          # Flutter 3.22.3 cannot resolve extended_text 14. The app itself stays on 3.24.5.
+          sed -i -e 's/extended_text: 14.0.0/extended_text: 13.0.0/g' flutter/pubspec.yaml
+          pushd flutter && flutter pub get && popd
+          flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
+          cp ./flutter/macos/Runner/bridge_generated.h ./flutter/ios/Runner/bridge_generated.h
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: hobson-bridge
+          path: |
+            ./src/bridge_generated.rs
+            ./src/bridge_generated.io.rs
+            ./flutter/lib/generated_bridge.dart
+            ./flutter/lib/generated_bridge.freezed.dart
+            ./flutter/macos/Runner/bridge_generated.h
+            ./flutter/ios/Runner/bridge_generated.h
+
+  topmost:
+    uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
+    with:
+      upload-artifact: true
+      target: windows-2022
+      configuration: Release
+      platform: x64
+      target_version: Windows10
+
+  windows:
+    name: Windows x64
+    needs: [bridge, topmost]
+    runs-on: windows-2022
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: hobson-bridge
+          path: ./
+
+      - uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0 # v2
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - id: flutter
+        uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          architecture: x64
+          cache: true
+
+      - name: Replace engine with rustdesk custom flutter engine
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          mv -Force windows-x64-release/* "${{ steps.flutter.outputs['CACHE-PATH'] }}/bin/cache/artifacts/engine/windows-x64-release/"
+
+      - name: Patch flutter
+        shell: bash
+        run: |
+          cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))
+          cd $(dirname $(dirname $(which flutter)))
+          git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: hobson-windows-x64
+          cache-on-failure: true
+
+      - name: Setup vcpkg with GitHub Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        shell: bash
+        env:
+          VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+        run: |
+          if ! "$VCPKG_ROOT/vcpkg" install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
+              echo "$_1:"
+              cat "$_1"
+            done
+            exit 1
+          fi
+
+      - name: Build rustdesk
+        env:
+          HOBSON_TRUST_SECRET: ${{ secrets.HOBSON_TRUST_SECRET }}
+        run: |
+          python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+          mv ./flutter/build/windows/x64/runner/Release ./rustdesk
+          Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
+          Expand-Archive usbmmidd_v2.zip -DestinationPath .
+          Remove-Item -Path usbmmidd_v2\Win32 -Recurse
+          Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
+          mv -Force .\usbmmidd_v2 ./rustdesk
+
+      - name: find Runner.res
+        continue-on-error: true
+        shell: bash
+        run: |
+          runner_res=$(find . -name "Runner.res" | head -n 1)
+          if [ -n "$runner_res" ]; then
+            cp "$runner_res" ./libs/portable/Runner.res
+          fi
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: topmostwindow-artifacts-x64
+          path: ./rustdesk
+
+      - name: Build self-extracting executable
+        shell: bash
+        run: |
+          sed -i '/dpiAware/d' res/manifest.xml
+          pushd ./libs/portable
+          pip3 install -r requirements.txt
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
+          popd
+          mkdir -p ./dist
+          mv ./target/release/rustdesk-portable-packer.exe ./dist/HobsonRemote-${{ github.ref_name }}-x86_64.exe
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
+
+      - name: Build msi
+        run: |
+          pushd ./res/msi
+          python preprocess.py --arp -d ../../rustdesk
+          nuget restore msi.sln
+          msbuild msi.sln -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
+          $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path ../../dist | Out-Null
+          mv $msi.FullName ../../dist/HobsonRemote-${{ github.ref_name }}-x86_64.msi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: hobson-release-windows
+          path: dist/*
+          if-no-files-found: error
+
+  android:
+    name: Android arm64
+    needs: [bridge]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: false
+
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake g++ git libclang-dev libgtk-3-dev llvm-dev nasm ninja-build openjdk-17-jdk-headless pkg-config wget
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: hobson-bridge
+          path: ./
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Patch flutter
+        run: |
+          cd $(dirname $(dirname $(which flutter)))
+          git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+
+      - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
+        id: setup-ndk
+        with:
+          ndk-version: ${{ env.NDK_VERSION }}
+          add-to-path: true
+
+      - name: Setup vcpkg with GitHub Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: /opt/artifacts/vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: ./flutter/build_android_deps.sh arm64-v8a
+
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-linux-android
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: hobson-android-arm64
+          cache-on-failure: true
+
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        with:
+          path: ~/.cargo/bin
+          key: hobson-cargo-ndk-${{ env.CARGO_NDK_VERSION }}
+
+      - name: Build rustdesk lib
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          HOBSON_TRUST_SECRET: ${{ secrets.HOBSON_TRUST_SECRET }}
+        run: |
+          if ! command -v cargo-ndk >/dev/null; then
+            cargo install cargo-ndk --version ${{ env.CARGO_NDK_VERSION }} --locked
+          fi
+          ./flutter/ndk_arm64.sh
+          mkdir -p ./flutter/android/app/src/main/jniLibs/arm64-v8a
+          cp ./target/aarch64-linux-android/release/liblibrustdesk.so ./flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+
+      - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            flutter/android/.gradle
+          key: hobson-gradle-${{ hashFiles('flutter/android/**/*.gradle*', 'flutter/android/**/gradle-wrapper.properties') }}
+
+      - name: Build apk
+        env:
+          JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          export PATH="$JAVA_HOME/bin:$PATH"
+          sed -i "s/org.gradle.jvmargs=-Xmx1024M/org.gradle.jvmargs=-Xmx2g/g" ./flutter/android/gradle.properties
+          sed -i "s/signingConfigs.release/signingConfigs.debug/g" ./flutter/android/app/build.gradle
+          mkdir -p ./flutter/android/app/src/main/jniLibs/arm64-v8a
+          cp "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" ./flutter/android/app/src/main/jniLibs/arm64-v8a/
+          cp ./target/aarch64-linux-android/release/liblibrustdesk.so ./flutter/android/app/src/main/jniLibs/arm64-v8a/librustdesk.so
+          pushd flutter
+          flutter build apk --release --target-platform android-arm64 --split-per-abi
+          popd
+          mkdir -p signed-apk
+          cp flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "signed-apk/HobsonRemote-${{ github.ref_name }}-aarch64.apk"
+
+      - name: Setup sign tool version
+        id: sign-tools
+        run: |
+          BUILD_TOOL_VERSION=$(ls /usr/local/lib/android/sdk/build-tools/ | tail -n 1)
+          echo "version=$BUILD_TOOL_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Sign APK
+        if: env.ANDROID_SIGNING_KEY != ''
+        id: sign
+        uses: r0adkll/sign-android-release@349ebdef58775b1e0d8099458af0816dc79b6407 # v1
+        with:
+          releaseDirectory: ./signed-apk
+          signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
+          alias: ${{ secrets.ANDROID_ALIAS }}
+          keyStorePassword: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: ${{ steps.sign-tools.outputs.version }}
+
+      - name: Keep unsigned APK when no keystore is configured
+        if: env.ANDROID_SIGNING_KEY == ''
+        run: mkdir -p dist && cp signed-apk/*.apk dist/
+
+      - name: Collect signed APK
+        if: env.ANDROID_SIGNING_KEY != ''
+        run: |
+          mkdir -p dist
+          cp "${{ steps.sign.outputs.signedReleaseFile }}" "dist/HobsonRemote-${{ github.ref_name }}-aarch64-signed.apk"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: hobson-release-android
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: [windows, android]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: hobson-release-*
+          merge-multiple: true
+          path: dist
+      - uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: true
+          files: dist/*
+          generate_release_notes: false
+          body: |
+            Hobson Remote build for ${{ github.ref_name }}.
+            Windows x64 portable exe and msi, plus the signed Android arm64 APK when ANDROID_SIGNING_KEY is set.
