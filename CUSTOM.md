@@ -150,14 +150,17 @@ Listed devices still auto-accept when **both** are true:
 
 1. The peer's RustDesk ID is in the device list. That ID is self-reported in
    the login message, so the list is a filter, not a proof of identity.
-2. The peer proves the shared secret. The secret is the permanent password,
-   and only a listed ID is allowed to use it. Login hashes it with the salt
-   and challenge, so it is not sent in the clear.
+2. The peer proves the shared secret. Login hashes it with the salt and
+   challenge, so it is not sent in the clear. The secret is not the device
+   password.
 
-Anyone else must type the one-time password shown on the target home screen
-and then be accepted there. Approve mode is `both`. The one-time password
-changes when a session is accepted. An unlisted peer that sends the trust
-secret is refused, and wrong passwords stay rate-limited. Panic unlock,
+Anyone else connects with the target's ID and its device password. Approve
+mode is `password`, so there is no Accept click. Each install creates its own
+permanent device password on first run (24 characters) and shows it on the
+home screen with Copy and Change. That password is stored separately from
+`HOBSON_TRUST_SECRET`. An unlisted peer that sends the trust secret is
+refused. Repeated failures from the same IP or the same ID lock out with a
+backoff that starts at one minute and doubles, up to one hour. Panic unlock,
 clipboard sync, helper control, previews, the title watcher, and
 approve-on-phone stay limited to listed devices. Unlisted connections are
 marked in the connection log and on the home screen.

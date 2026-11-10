@@ -62,9 +62,7 @@ class HobsonLogEntry {
       case 'denied':
         return id.isEmpty ? 'Refused connection' : 'Refused ID $id';
       case 'unlisted':
-        return event == 'wait'
-            ? 'Unlisted ID $id waiting for Accept'
-            : 'Unlisted ID $id connected';
+        return 'Unlisted ID $id connected';
       default:
         return who;
     }
@@ -76,7 +74,7 @@ class HobsonLogEntry {
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     final bits = <String>[clock];
     if (direction == 'denied') {
-      bits.add('Add this ID to hobson_devices.json and rebuild');
+      bits.add('Wrong password');
     } else if (id.isNotEmpty) bits.add('ID $id');
     if (event == 'end') bits.add(_formatDuration(seconds));
     if (ip.isNotEmpty) bits.add(ip);

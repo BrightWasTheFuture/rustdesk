@@ -210,7 +210,7 @@ pub fn check_outgoing(_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn trust_secret() -> &'static str {
+pub(crate) fn trust_secret() -> &'static str {
     option_env!("HOBSON_TRUST_SECRET").unwrap_or("").trim()
 }
 
@@ -258,12 +258,12 @@ pub fn apply_policy() {
     }
     {
         let mut over = config::OVERWRITE_SETTINGS.write().unwrap();
-        over.insert(keys::OPTION_APPROVE_MODE.to_owned(), "both".to_owned());
+        over.insert(keys::OPTION_APPROVE_MODE.to_owned(), "password".to_owned());
         over.insert(
             keys::OPTION_VERIFICATION_METHOD.to_owned(),
-            "use-both-passwords".to_owned(),
+            "use-permanent-password".to_owned(),
         );
-        over.insert("allow-hide-cm".to_owned(), "N".to_owned());
+        over.insert("allow-hide-cm".to_owned(), "Y".to_owned());
         over.insert("enable-lan-discovery".to_owned(), "N".to_owned());
         over.insert(keys::OPTION_ENABLE_FILE_TRANSFER.to_owned(), "Y".to_owned());
         over.insert(keys::OPTION_ENABLE_CLIPBOARD.to_owned(), "Y".to_owned());
@@ -274,14 +274,10 @@ pub fn apply_policy() {
         log::warn!(
             "HOBSON_TRUST_SECRET is unset. Listed devices cannot auto-accept until you rebuild with the secret."
         );
-    } else {
-        config::BUILTIN_SETTINGS.write().unwrap().insert(
-            keys::OPTION_DEFAULT_CONNECT_PASSWORD.to_owned(),
-            secret.to_owned(),
-        );
-        if !Config::set_permanent_password(secret) {
-            log::warn!("Hobson Remote could not store the shared permanent password");
-        }
+    }
+    let device_password = ensure_device_password();
+    if !Config::set_permanent_password(&device_password) {
+        log::warn!("Hobson Remote could not store the device password");
     }
     let minutes = file().idle_disconnect_minutes;
     if minutes == 0 {
@@ -320,17 +316,84 @@ pub fn on_incoming_open(conn_id: i32, id: &str, name: &str) {
     }
 }
 
-pub fn on_unlisted_waiting(id: &str, name: &str, ip: &str) {
-    on_unlisted(id, name, ip, "wait");
+const DEVICE_PASSWORD: &str = "hobson-device-password";
+
+pub fn ensure_device_password() -> String {
+    let existing = Config::get_option(DEVICE_PASSWORD);
+    if existing.chars().count() >= 16 {
+        return existing;
+    }
+    let generated = Config::get_auto_password(24);
+    Config::set_option(DEVICE_PASSWORD.to_owned(), generated.clone());
+    let stored = Config::get_option(DEVICE_PASSWORD);
+    if stored.chars().count() >= 16 {
+        stored
+    } else {
+        generated
+    }
+}
+
+struct LoginAttempt {
+    fails: u32,
+    until: Option<std::time::Instant>,
+}
+
+fn login_keys(ip: &str, id: &str) -> [String; 2] {
+    [format!("ip:{ip}"), format!("id:{}", id.trim())]
+}
+
+fn login_map() -> &'static std::sync::Mutex<std::collections::HashMap<String, LoginAttempt>> {
+    use std::sync::Mutex;
+    static MAP: std::sync::OnceLock<Mutex<std::collections::HashMap<String, LoginAttempt>>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+pub fn login_wait_secs(ip: &str, id: &str) -> u64 {
+    let now = std::time::Instant::now();
+    let map = login_map().lock().unwrap();
+    login_keys(ip, id)
+        .into_iter()
+        .filter_map(|key| {
+            map.get(&key).and_then(|attempt| attempt.until).and_then(|until| {
+                let secs = until.saturating_duration_since(now).as_secs();
+                if secs > 0 {
+                    Some(secs)
+                } else {
+                    None
+                }
+            })
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+pub fn login_failed(ip: &str, id: &str) {
+    let mut map = login_map().lock().unwrap();
+    for key in login_keys(ip, id) {
+        let attempt = map.entry(key).or_insert(LoginAttempt {
+            fails: 0,
+            until: None,
+        });
+        attempt.fails = attempt.fails.saturating_add(1);
+        if attempt.fails >= 5 {
+            let shift = (attempt.fails - 5).min(6);
+            let secs = (60u64 << shift).min(3600);
+            attempt.until = Some(std::time::Instant::now() + std::time::Duration::from_secs(secs));
+        }
+    }
+}
+
+pub fn login_succeeded(ip: &str, id: &str) {
+    let mut map = login_map().lock().unwrap();
+    for key in login_keys(ip, id) {
+        map.remove(&key);
+    }
 }
 
 fn on_unlisted(id: &str, name: &str, ip: &str, ev: &str) {
     let label = if name.is_empty() { id } else { name };
-    let text = if ev == "wait" {
-        format!("Unlisted ID {id} is waiting for Accept ({label})")
-    } else {
-        format!("Unlisted ID {id} connected ({label})")
-    };
+    let text = format!("Unlisted ID {id} connected ({label})");
     conn_log::unlisted(id, name, ip, ev);
     notify(&text);
     #[cfg(feature = "flutter")]
@@ -742,5 +805,31 @@ mod tests {
             &["waiting for your input".into()]
         ));
         assert!(!title_matches("cargo build", &["waiting for your input".into()]));
+    }
+
+    #[test]
+    fn device_password_is_at_least_16_characters() {
+        let password = Config::get_auto_password(24);
+        assert!(password.chars().count() >= 16);
+    }
+
+    #[test]
+    fn login_lockout_backs_off_per_ip_and_id() {
+        let ip = "203.0.113.44";
+        let id = "731900099";
+        login_succeeded(ip, id);
+        assert_eq!(login_wait_secs(ip, id), 0);
+        for _ in 0..4 {
+            login_failed(ip, id);
+        }
+        assert_eq!(login_wait_secs(ip, id), 0);
+        login_failed(ip, id);
+        let first = login_wait_secs(ip, id);
+        assert!(first >= 30, "first lockout was {first}s");
+        assert_eq!(login_wait_secs("203.0.113.45", "731900100"), 0);
+        login_failed(ip, id);
+        assert!(login_wait_secs(ip, id) > first);
+        login_succeeded(ip, id);
+        assert_eq!(login_wait_secs(ip, id), 0);
     }
 }

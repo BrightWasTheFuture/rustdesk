@@ -2654,9 +2654,9 @@ impl Connection {
         state.failures = 0;
     }
 
-    fn hobson_temp_password_ok(&self) -> bool {
-        let password = password::temporary_password();
-        !password.is_empty() && self.validate_password_plain(&password)
+    fn hobson_secret_matches(&self) -> bool {
+        let secret = crate::hobson::trust_secret();
+        !secret.is_empty() && self.validate_password_plain(secret)
     }
 
     fn hobson_perm_password_ok(&self) -> bool {
@@ -3131,6 +3131,15 @@ impl Connection {
                     }
                 }
                 if crate::hobson::active() {
+                    let wait = crate::hobson::login_wait_secs(&self.ip, &self.lr.my_id);
+                    if wait > 0 {
+                        self.send_login_error(format!(
+                            "Too many attempts. Try again in {wait}s"
+                        ))
+                        .await;
+                        return true;
+                    }
+                    crate::hobson::login_failed(&self.ip, &self.lr.my_id);
                     self.send_login_error(crate::client::LOGIN_MSG_PASSWORD_WRONG)
                         .await;
                     crate::hobson::on_rejected(&lr.my_id, &lr.my_name, &self.ip);
@@ -3142,13 +3151,18 @@ impl Connection {
                 if !res {
                     return true;
                 }
+                let wait = crate::hobson::login_wait_secs(&self.ip, &self.lr.my_id);
+                if wait > 0 {
+                    self.send_login_error(format!("Too many attempts. Try again in {wait}s"))
+                        .await;
+                    return true;
+                }
                 let listed = crate::hobson::allows(&self.lr.my_id);
-                let temp_ok = self.hobson_temp_password_ok();
-                let perm_ok = self.hobson_perm_password_ok();
-                let unlisted_secret = !listed && perm_ok;
-                let unlisted_otp = !listed && temp_ok && !perm_ok;
-                let listed_ok = listed && (perm_ok || temp_ok);
-                if unlisted_secret || (!listed_ok && !unlisted_otp) {
+                let secret_match = self.hobson_secret_matches();
+                let trust_ok = listed && secret_match;
+                let device_ok = self.hobson_perm_password_ok() && !secret_match;
+                if !trust_ok && !device_ok {
+                    crate::hobson::login_failed(&self.ip, &self.lr.my_id);
                     self.update_failure_with_scope(failure, false, 0, FailureScope::Default);
                     self.check_update_temporary_password(false);
                     self.send_login_error(crate::client::LOGIN_MSG_PASSWORD_WRONG)
@@ -3158,18 +3172,8 @@ impl Connection {
                     } else {
                         self.try_start_cm(lr.my_id, lr.my_name, false);
                     }
-                } else if unlisted_otp {
-                    if crate::hobson::panic_locked() {
-                        self.send_login_error("Hobson panic lock").await;
-                        crate::hobson::on_rejected(&lr.my_id, &lr.my_name, &self.ip);
-                        return false;
-                    }
-                    self.update_failure_with_scope(failure, true, 0, FailureScope::Default);
-                    crate::hobson::on_unlisted_waiting(&self.lr.my_id, &self.lr.my_name, &self.ip);
-                    self.try_start_cm(lr.my_id.clone(), lr.my_name.clone(), false);
-                    self.send_login_error(crate::client::LOGIN_MSG_NO_PASSWORD_ACCESS)
-                        .await;
                 } else {
+                    crate::hobson::login_succeeded(&self.ip, &self.lr.my_id);
                     if crate::hobson::panic_locked() {
                         let unlock = self.lr.my_name.starts_with("hobson-unlock:");
                         if unlock && crate::hobson::allows(&self.lr.my_id) {
