@@ -35,6 +35,15 @@ The APK is signed with the existing `ANDROID_SIGNING_KEY`, `ANDROID_ALIAS`,
 passphrase is `HOBSON_TRUST_SECRET`. Rust, Flutter/pub, vcpkg, and Gradle are
 cached so a repeat build should stay well under the full Flutter Tag Build.
 
+Release files are named `hobson-remote-<tag>-x86_64.exe`,
+`hobson-remote-<tag>-x86_64.msi`, and
+`hobson-remote-<tag>-aarch64-signed.apk`. The job refuses an APK whose
+`aapt dump badging` package is not `com.hobson.remote`. That is
+`applicationId` in `flutter/android/app/build.gradle`. The Kotlin namespace
+stays `com.carriez.flutter_hbb`, so activity and service class names in the
+manifest still use that prefix. The 1.5.3-3 APK from Flutter Tag Build
+already installs as `com.hobson.remote`.
+
 The upstream Flutter Tag Build workflow is unchanged. Pushing this new
 workflow file needs a token with the `workflow` scope.
 

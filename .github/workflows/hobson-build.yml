@@ -217,7 +217,7 @@ jobs:
           python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
           popd
           mkdir -p ./dist
-          mv ./target/release/rustdesk-portable-packer.exe ./dist/HobsonRemote-${{ github.ref_name }}-x86_64.exe
+          mv ./target/release/rustdesk-portable-packer.exe ./dist/hobson-remote-${{ github.ref_name }}-x86_64.exe
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
@@ -230,7 +230,7 @@ jobs:
           msbuild msi.sln -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
           $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
           New-Item -ItemType Directory -Force -Path ../../dist | Out-Null
-          mv $msi.FullName ../../dist/HobsonRemote-${{ github.ref_name }}-x86_64.msi
+          mv $msi.FullName ../../dist/hobson-remote-${{ github.ref_name }}-x86_64.msi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -354,7 +354,23 @@ jobs:
           flutter build apk --release --target-platform android-arm64 --split-per-abi
           popd
           mkdir -p signed-apk
-          cp flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "signed-apk/HobsonRemote-${{ github.ref_name }}-aarch64.apk"
+          cp flutter/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "signed-apk/hobson-remote-${{ github.ref_name }}-aarch64.apk"
+
+      - name: Check APK package id
+        run: |
+          set -euo pipefail
+          apk="signed-apk/hobson-remote-${{ github.ref_name }}-aarch64.apk"
+          tools=$(ls -d /usr/local/lib/android/sdk/build-tools/* | tail -n 1)
+          if [ -x "$tools/aapt" ]; then
+            badging=$("$tools/aapt" dump badging "$apk" | head -n 1)
+          else
+            badging=$("$tools/aapt2" dump badging "$apk" | head -n 1)
+          fi
+          echo "$badging"
+          # applicationId in flutter/android/app/build.gradle. The namespace
+          # stays com.carriez.flutter_hbb, so component class names still use
+          # that prefix. The install id is this package name.
+          printf '%s\n' "$badging" | grep -q "package: name='com.hobson.remote'"
 
       - name: Setup sign tool version
         id: sign-tools
@@ -383,7 +399,7 @@ jobs:
         if: env.ANDROID_SIGNING_KEY != ''
         run: |
           mkdir -p dist
-          cp "${{ steps.sign.outputs.signedReleaseFile }}" "dist/HobsonRemote-${{ github.ref_name }}-aarch64-signed.apk"
+          cp "${{ steps.sign.outputs.signedReleaseFile }}" "dist/hobson-remote-${{ github.ref_name }}-aarch64-signed.apk"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
