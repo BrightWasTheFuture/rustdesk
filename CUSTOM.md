@@ -23,6 +23,30 @@ the patched `config.rs`. Upstream RustDesk no longer reads `RENDEZVOUS_SERVER` /
 2. In this repo: `git submodule update --init --remote libs/hbb_common`,
    then `git add libs/hbb_common && git commit -m "bump hbb_common" && git push`.
 
+## Fast rebuild (Windows x64 + Android arm64)
+
+`.github/workflows/hobson-build.yml` builds only those two targets. It runs
+on **Actions → Hobson build → Run workflow**, and on a tag push matching
+`hobson-*` (for example `hobson-1.5.3-2`). A tag push also uploads the exe,
+msi, and APK to a prerelease of that tag.
+
+The APK is signed with the existing `ANDROID_SIGNING_KEY`, `ANDROID_ALIAS`,
+`ANDROID_KEY_STORE_PASSWORD`, and `ANDROID_KEY_PASSWORD` secrets. The trust
+passphrase is `HOBSON_TRUST_SECRET`. Rust, Flutter/pub, vcpkg, and Gradle are
+cached so a repeat build should stay well under the full Flutter Tag Build.
+
+Release files are named `hobson-remote-<tag>-x86_64.exe`,
+`hobson-remote-<tag>-x86_64.msi`, and
+`hobson-remote-<tag>-aarch64-signed.apk`. The job refuses an APK whose
+`aapt dump badging` package is not `com.hobson.remote`. That is
+`applicationId` in `flutter/android/app/build.gradle`. The Kotlin namespace
+stays `com.carriez.flutter_hbb`, so activity and service class names in the
+manifest still use that prefix. The 1.5.3-3 APK from Flutter Tag Build
+already installs as `com.hobson.remote`.
+
+The upstream Flutter Tag Build workflow is unchanged. Pushing this new
+workflow file needs a token with the `workflow` scope.
+
 ## Rebuilding (GitHub Actions)
 
 Push a version tag from the `custom` branch, e.g.:
