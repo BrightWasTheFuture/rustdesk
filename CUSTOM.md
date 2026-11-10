@@ -25,12 +25,20 @@ the patched `config.rs`. Upstream RustDesk no longer reads `RENDEZVOUS_SERVER` /
 
 ## Rebuilding (GitHub Actions)
 
-Actions → **Flutter Nightly Build** → *Run workflow* → branch `custom`.
-(CLI: `gh workflow run flutter-nightly.yml --ref custom -R BrightWasTheFuture/rustdesk`)
+Push a version tag from the `custom` branch, e.g.:
+
+```
+git tag 1.5.3-2 && git push origin 1.5.3-2
+```
+
+(Tags matching `1.2.3-4` / `v1.2.3` trigger **Flutter Tag Build**.) You can also run
+Actions → **Flutter Tag Build** → *Run workflow*, but then the release tag is the
+branch name, so a tag push is cleaner. (**Flutter Nightly Build** is disabled on forks
+because of its nightly schedule.)
 
 It runs upstream's `.github/workflows/flutter-build.yml` with `upload-artifact: true`
-and publishes the results to the `nightly` pre-release of this fork:
-- Windows x64: `rustdesk-<ver>-x86_64.exe` and `rustdesk-<ver>-x86_64.msi`
+and publishes the results as a pre-release named after the tag in this fork:
+- Windows x64: `rustdesk-<ver>-x86_64.exe` (portable/self-installing) and `rustdesk-<ver>-x86_64.msi`
 - Android arm64: `rustdesk-<ver>-aarch64-signed.apk`
 
 The upstream workflow also attempts other platforms (Linux, macOS, iOS, web, arm Windows).
