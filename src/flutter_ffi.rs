@@ -308,7 +308,7 @@ pub fn will_session_close_close_session(session_id: SessionID) -> SyncReturn<boo
 
 pub fn session_close(session_id: SessionID) {
     if let Some(session) = sessions::remove_session_by_session_id(&session_id) {
-        crate::hobson::on_outgoing_closed(session.get_id());
+        crate::hobson::on_outgoing_closed(&crate::client::Interface::get_id(&*session));
         crate::keyboard::shortcuts::clear_session_state(&session_id);
         // `release_remote_keys` is not required for mobile platforms in common cases.
         // But we still call it to make the code more stable.
