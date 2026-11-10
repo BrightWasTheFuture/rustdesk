@@ -11,6 +11,7 @@ lazy_static::lazy_static! {
 pub enum ScreenshotAction {
     SaveAs(String),
     CopyToClipboard,
+    SaveAndCopy(String),
     Discard,
 }
 
@@ -33,6 +34,13 @@ impl From<&str> for ScreenshotAction {
             }
             Some('1') => Self::CopyToClipboard,
             Some('2') => Self::default(),
+            Some('3') => {
+                if let Some((pos, _)) = value.char_indices().nth(2) {
+                    Self::SaveAndCopy(value[pos..].to_string())
+                } else {
+                    Self::default()
+                }
+            }
             _ => Self::default(),
         }
     }
@@ -43,6 +51,7 @@ impl Into<String> for ScreenshotAction {
         match self {
             Self::SaveAs(p) => format!("0:{p}"),
             Self::CopyToClipboard => "1".to_owned(),
+            Self::SaveAndCopy(p) => format!("3:{p}"),
             Self::Discard => "2".to_owned(),
         }
     }
@@ -75,6 +84,19 @@ impl Screenshot {
         match ScreenshotAction::from(&action as &str) {
             ScreenshotAction::SaveAs(p) => {
                 std::fs::write(p, data)?;
+            }
+            ScreenshotAction::SaveAndCopy(p) => {
+                std::fs::write(&p, &data)?;
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                {
+                    let clips = vec![Clipboard {
+                        compress: false,
+                        content: data,
+                        format: ClipboardFormat::ImagePng.into(),
+                        ..Default::default()
+                    }];
+                    update_clipboard(clips, ClipboardSide::Client);
+                }
             }
             ScreenshotAction::CopyToClipboard => {
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]

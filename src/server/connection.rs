@@ -367,6 +367,8 @@ pub struct Connection {
     file_transfer: Option<(String, bool)>,
     view_camera: bool,
     terminal: bool,
+    hobson_window: String,
+    hobson_window_wait: u8,
     port_forward_socket: Option<Framed<TcpStream, BytesCodec>>,
     port_forward_mux: Option<super::port_forward_mux::PortForwardMux>,
     port_forward_address: String,
@@ -585,6 +587,8 @@ impl Connection {
             file_transfer: None,
             view_camera: false,
             terminal: false,
+            hobson_window: String::new(),
+            hobson_window_wait: 0,
             port_forward_socket: None,
             port_forward_mux: None,
             port_forward_address: "".to_owned(),
@@ -1170,6 +1174,7 @@ impl Connection {
                     }
                 }
                 _ = second_timer.tick() => {
+                    conn.hobson_window_tick().await;
                     #[cfg(windows)]
                     conn.portable_check();
                     raii::AuthedConnID::check_wake_lock_on_setting_changed();
@@ -2195,6 +2200,19 @@ impl Connection {
         msg_out.set_login_response(res);
         self.send(msg_out).await;
         crate::hobson::on_incoming_open(self.inner.id(), &self.lr.my_id, &self.lr.my_name);
+        if crate::hobson::is_helper(&self.lr.my_id)
+            && !self.lr.my_name.starts_with("hobson-sync:")
+        {
+            let label = if self.lr.my_name.is_empty() {
+                self.lr.my_id.as_str()
+            } else {
+                self.lr.my_name.as_str()
+            };
+            crate::hobson::helper_arrived(label);
+            crate::hobson::notify_local(&format!(
+                "{label} is in control. Take back control from that device to end it."
+            ));
+        }
         if crate::hobson::privacy_on_connect()
             && self.file_transfer.is_none()
             && !self.view_camera
@@ -2233,6 +2251,9 @@ impl Connection {
             } else {
                 self.delayed_read_dir = Some((dir.to_owned(), show_hidden));
             }
+        } else if self.lr.my_name.starts_with("hobson-sync:") {
+            // Clipboard and preview sync. Stay up for chat, and do not subscribe video.
+            self.keyboard = false;
         } else if self.terminal {
             self.keyboard = false;
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -3115,6 +3136,21 @@ impl Connection {
                         self.try_start_cm(lr.my_id, lr.my_name, false);
                     }
                 } else {
+                    if crate::hobson::panic_locked() {
+                        let unlock = self.lr.my_name.starts_with("hobson-unlock:");
+                        if unlock && crate::hobson::allows(&self.lr.my_id) {
+                            crate::hobson::clear_panic();
+                            self.send_login_error("Hobson panic lock cleared").await;
+                        } else {
+                            self.send_login_error("Hobson panic lock").await;
+                            crate::hobson::on_rejected(
+                                &self.lr.my_id,
+                                &self.lr.my_name,
+                                &self.ip,
+                            );
+                        }
+                        return false;
+                    }
                     self.update_failure_with_scope(failure, true, 0, FailureScope::Default);
                     if !self.begin_trusted_device().await {
                         return false;
@@ -3950,8 +3986,10 @@ impl Connection {
                         }
                     }
                     Some(misc::Union::ChatMessage(c)) => {
-                        self.send_to_cm(ipc::Data::ChatMessage { text: c.text });
-                        self.chat_unanswered = true;
+                        if !self.hobson_command(&c.text).await {
+                            self.send_to_cm(ipc::Data::ChatMessage { text: c.text });
+                            self.chat_unanswered = true;
+                        }
                         self.update_auto_disconnect_timer();
                     }
                     Some(misc::Union::Option(o)) => {
@@ -5338,6 +5376,11 @@ impl Connection {
         }
         self.closed = true;
         crate::hobson::on_incoming_closed(self.inner.id());
+        if crate::hobson::is_helper(&self.lr.my_id)
+            && !self.lr.my_name.starts_with("hobson-sync:")
+        {
+            crate::hobson::helper_left();
+        }
         // If voice A,B -> C, and A,B has voice call
         // B disconnects, C will reset the voice call input.
         //
@@ -5757,6 +5800,160 @@ impl Connection {
             rdev::simulate(&rdev::EventType::KeyRelease(*modifier)).ok();
         }
         self.pressed_modifiers.clear();
+    }
+
+    async fn hobson_window_tick(&mut self) {
+        if self.hobson_window.is_empty() {
+            return;
+        }
+        self.hobson_window_wait = self.hobson_window_wait.saturating_add(1);
+        if self.hobson_window_wait < 2 {
+            return;
+        }
+        self.hobson_window_wait = 0;
+        let title = self.hobson_window.clone();
+        if let Some(jpeg) = crate::hobson::capture_named_window(&title) {
+            let encoded = crate::common::encode64(&jpeg);
+            if encoded.len() < 80_000 {
+                self.hobson_reply(&format!("hobson:winframe {encoded}")).await;
+            }
+        }
+    }
+
+    async fn hobson_reply(&mut self, text: &str) {
+        let mut misc = Misc::new();
+        misc.set_chat_message(ChatMessage {
+            text: text.to_owned(),
+            ..Default::default()
+        });
+        let mut msg = Message::new();
+        msg.set_misc(misc);
+        self.send(msg).await;
+    }
+
+    async fn hobson_command(&mut self, text: &str) -> bool {
+        if !crate::hobson::active() || !crate::hobson::allows(&self.lr.my_id) {
+            return false;
+        }
+        let Some(rest) = text.strip_prefix("hobson:") else {
+            return false;
+        };
+        if let Some(url) = rest.strip_prefix("open ") {
+            return self.hobson_open_url(url.trim());
+        }
+        if rest == "panic" {
+            crate::hobson::set_panic(true);
+            self.hobson_lock_workstation();
+            crate::hobson::notify_local("Panic lock is on");
+            return true;
+        }
+        if rest == "lock" {
+            self.hobson_lock_workstation();
+            return true;
+        }
+        if let Some(body) = rest.strip_prefix("paste ") {
+            self.hobson_type(body);
+            return true;
+        }
+        if rest == "keys y" {
+            crate::hobson::ack_alert();
+            self.hobson_type("y\n");
+            return true;
+        }
+        if rest == "keys n" {
+            crate::hobson::ack_alert();
+            self.hobson_type("n\n");
+            return true;
+        }
+        if let Some(body) = rest.strip_prefix("clips ") {
+            let reply = crate::hobson::ingest_clips(body);
+            self.hobson_reply(&format!("hobson:clips {reply}")).await;
+            let alert = crate::hobson::latest_alert();
+            if !alert.is_empty() {
+                self.hobson_reply(&format!("hobson:alert {alert}")).await;
+            }
+            if crate::hobson::tile_previews() {
+                if let Some(jpeg) = crate::hobson::capture_primary_jpeg() {
+                    let encoded = crate::common::encode64(&jpeg);
+                    if encoded.len() < 80_000 {
+                        self.hobson_reply(&format!("hobson:frame {encoded}")).await;
+                    }
+                }
+            }
+            return true;
+        }
+        if rest == "windows" {
+            let body = crate::hobson::window_titles().join("\n");
+            self.hobson_reply(&format!("hobson:windows {body}")).await;
+            return true;
+        }
+        if let Some(title) = rest.strip_prefix("window ") {
+            let title = title.trim();
+            if title.is_empty() || title == "stop" {
+                self.hobson_window.clear();
+                self.try_sub_monitor_services();
+            } else {
+                self.hobson_window = title.to_owned();
+                self.hobson_window_wait = 2;
+                let count = Self::video_source_count(self.video_source());
+                if count > 0 {
+                    let sub: Vec<usize> = (0..count).collect();
+                    self.capture_displays(&[], &sub, &[]).await;
+                }
+            }
+            return true;
+        }
+        false
+    }
+
+    fn hobson_open_url(&self, url: &str) -> bool {
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            return false;
+        }
+        if url.chars().any(|ch| {
+            ch.is_whitespace() || matches!(ch, '"' | '\'' | '&' | '|' | ';' | '`' | '\\')
+        }) {
+            return false;
+        }
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", url])
+                .spawn();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(url).spawn();
+        }
+        true
+    }
+
+    fn hobson_lock_workstation(&self) {
+        #[cfg(windows)]
+        crate::platform::windows::lock_screen();
+    }
+
+    fn hobson_type(&self, text: &str) {
+        let text: String = text.chars().take(2000).collect();
+        if text.is_empty() {
+            return;
+        }
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        {
+            let mut key_event = KeyEvent::new();
+            key_event.mode = KeyboardMode::Legacy.into();
+            key_event.press = true;
+            key_event.set_seq(text);
+            self.input_key(key_event, true);
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            let _ = text;
+        }
     }
 
     fn get_auto_disconenct_timer() -> Option<(Instant, u64)> {

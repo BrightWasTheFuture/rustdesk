@@ -86,9 +86,12 @@ This branch turns the Flutter client into a private app for three devices.
 The window title and Android label are **Hobson Remote**. The Windows service,
 install directory, and config folder are **HobsonRemote** (no space): the
 installer rejects spaces in the application name. Android installs as
-`com.hobson.remote`, so it can sit next to the official RustDesk app. The
-first install is a new app; later updates still need the same
-`ANDROID_SIGNING_KEY` keystore.
+`com.hobson.remote` (`applicationId` in `flutter/android/app/build.gradle`),
+so it can sit next to the official RustDesk app. The Kotlin namespace stays
+`com.carriez.flutter_hbb`, which is why activity and service class names in
+the APK still use that prefix. `aapt dump badging` on the 1.5.3-3 APK reports
+`package: name='com.hobson.remote'`. The first install is a new app; later
+updates still need the same `ANDROID_SIGNING_KEY` keystore.
 
 ### Device list
 
@@ -169,6 +172,67 @@ HobsonRemote config directory. A blocked ID also raises a system notification
 Flutter UI for the new screen is `flutter/lib/hobson/`. Policy (allowlist,
 password, relay, privacy) is `src/hobson/`. Commit to `custom` and push a
 version tag to rebuild, as below.
+
+## Daily use
+
+These switches live in `flutter/assets/hobson_devices.json`.
+
+`idle_disconnect_minutes` uses RustDesk's existing inactivity timer (mouse and keyboard reset it). `0` leaves it off. `free_space_gb` warns on a Windows home screen when C: is below that many gigabytes. `keep_awake_processes` is the list of process names that hold a Windows wake lock while they are running. `clipboard_history` is how many clipboard texts are kept. `clipboard_sync` (default on) exchanges that list with the other listed devices over a short chat-only connection. `tile_previews` (default off) asks those same connections for one small JPEG of the primary monitor; `preview_seconds` is how often the home screen asks (default 45). `watch_titles` (default off) on Windows scans visible window titles every few seconds. `title_patterns` are case-insensitive substrings. With the flag on and the list empty, the built-in patterns are `waiting for your input`, `approve this action`, and `needs you`.
+
+Each device can set `enabled` (default true), `role` (`helper` for a later Grok machine), `quality_from_phone`, and `quality_from_desktop` (`low`, `balanced`, or `best`). Connecting from the phone uses the phone quality (default `low`) and turns touch mode on. Connecting from a PC or laptop uses desktop quality (default `best`). A device with `"enabled": false` is shown but cannot be connected to. The Grok entry is that, with an empty ID, until you want it.
+
+View style, zoom, and the last monitor are the values RustDesk already stores per peer. After a network drop to a listed device, the session retries for about three minutes.
+
+Tapping an offline PC tile that has a MAC sends Wake-on-LAN and connects when the online query says it is up, or stops after about 90 seconds.
+
+**Panic lock** on the home screen (and the Android Quick Settings tile of the same name) marks this device so new sessions are refused, asks the other Windows PCs to lock, and locks this PC. **Unlock** on a Windows tile connects with the trust secret and clears the lock without starting a desktop session. A listed device can also send the chat commands `hobson:panic`, `hobson:lock`, `hobson:open https://...`, `hobson:paste ...`, and `hobson:keys y` or `hobson:keys n`.
+
+The prompt box sends `hobson:paste` into the focused window on the PC. Android's share sheet **Open on PC/Laptop** does the same for an `http` or `https` link, which the PC opens in the default browser.
+
+The session **More** menu has **Monitors** (a still thumbnail of each display; tap one to switch), **Low data** (quality `low`, 2 frames per second), and **One window** (a list of window titles; the chosen window is sent as a small JPEG about twice a second and the full desktop video subscription is dropped until you choose **Back to desktop**).
+
+**Screenshot** saves the PNG and, on Windows and Linux and macOS, copies it to the clipboard. On Android it opens the system share sheet so it can go to Grok or any other app.
+
+A helper device shows **Helper has control · Take back** on the viewer's session bar. On the controlled Windows desktop a small always-on-top, click-through banner stays up for as long as that helper is connected. Take back still means disconnecting from the helper's side. The banner is not a button.
+
+### Agent alerts and what Approve cannot do
+
+`HobsonRemote.exe --hobson-notify "message"` writes an alert and shows a Windows toast. The next clipboard/preview sync (or a running session) delivers that text to the phone, which shows Approve and Deny. Those buttons type `y` or `n` and Enter into whatever window is focused on the PC.
+
+Turn on `watch_titles` to raise the same alert when a visible window title contains one of `title_patterns`. A title match is reported at most once every three minutes.
+
+Claude Code can call the same command from its hooks. In the project's `.claude/settings.json` (or `~/.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "HobsonRemote.exe --hobson-notify \"Claude Code needs you\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "HobsonRemote.exe --hobson-notify \"Claude Code finished\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Use the full path to `HobsonRemote.exe` if it is not on `PATH`. Cursor can run the same command from a terminal hook or a user rule when an agent stops.
+
+Approve and Deny cannot accept a Windows UAC prompt. `consent.exe` runs on the secure desktop (the winlogon desktop), which is a different desktop from the one RustDesk captures and the one `hobson:keys` types into. Windows does not give a remote session input or pixels on that desktop unless the session is already elevated and the secure desktop is disabled in policy. Hobson does not do either. A UAC prompt still has to be answered on the PC itself, or by RustDesk's own elevation prompt when that path is available. The Approve button is only for a normal window that is waiting for `y` or `n`.
 
 ## Syncing with upstream
 `git fetch upstream && git merge upstream/master` on `custom` (and bump the

@@ -50,6 +50,9 @@ pub fn core_main() -> Option<CoreMainAction> {
     crate::load_custom_client();
     crate::hobson::install_identity();
     crate::hobson::apply_policy();
+    if crate::hobson::handle_cli() {
+        return None;
+    }
     #[cfg(windows)]
     if !crate::platform::windows::bootstrap() {
         // return None to terminate the process

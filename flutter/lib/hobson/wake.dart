@@ -31,6 +31,22 @@ Future<void> sendWakeOnLan(HobsonDevice device) async {
   socket.close();
 }
 
+Future<void> lockThisWindowsPc() async {
+  if (!Platform.isWindows) return;
+  await Process.run('rundll32.exe', ['user32.dll,LockWorkStation']);
+}
+
+/// Free bytes on C:, or null when this is not Windows or the query fails.
+Future<int?> windowsFreeBytes() async {
+  if (!Platform.isWindows) return null;
+  final result = await Process.run('powershell', [
+    '-NoProfile',
+    '-Command',
+    '(Get-CimInstance Win32_LogicalDisk -Filter "DeviceID=\'C:\'").FreeSpace',
+  ]);
+  return int.tryParse(result.stdout.toString().trim());
+}
+
 List<int>? _parseMac(String mac) {
   final parts = mac.split(RegExp(r'[-:]'));
   if (parts.length != 6) return null;

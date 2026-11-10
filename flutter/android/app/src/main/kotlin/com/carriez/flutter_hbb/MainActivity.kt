@@ -263,6 +263,7 @@ class MainActivity : FlutterActivity() {
     private fun handleHobsonIntent(intent: Intent?) {
         when (intent?.action) {
             HobsonTileService.ACTION_START -> requestMediaProjection()
+            HobsonPanicTileService.ACTION -> HobsonShare.capture(this, intent)
             Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE -> HobsonShare.capture(this, intent)
         }
     }
@@ -333,6 +334,20 @@ class MainActivity : FlutterActivity() {
                 }
                 "hobson_take_shared" -> {
                     result.success(HobsonShare.take())
+                }
+                "hobson_take_text" -> {
+                    result.success(HobsonShare.takeText())
+                }
+                "hobson_take_panic" -> {
+                    result.success(HobsonShare.takePanic())
+                }
+                "hobson_share_file" -> {
+                    val path = call.arguments as? String
+                    if (path.isNullOrEmpty()) {
+                        result.success(false)
+                    } else {
+                        result.success(HobsonShare.shareFile(this, path))
+                    }
                 }
                 "hobson_notify" -> {
                     val args = call.arguments as? Map<*, *>

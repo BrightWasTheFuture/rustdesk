@@ -4,6 +4,15 @@
   "display_name": "Hobson Remote",
   "relay_by_default": true,
   "privacy_on_trusted_windows": false,
+  "idle_disconnect_minutes": 0,
+  "free_space_gb": 10,
+  "keep_awake_processes": ["claude.exe", "cargo.exe"],
+  "clipboard_history": 10,
+  "clipboard_sync": true,
+  "tile_previews": false,
+  "preview_seconds": 45,
+  "watch_titles": false,
+  "title_patterns": ["waiting for your input", "approve this action", "needs you"],
   "devices": [
     {
       "slot": "pc",
@@ -26,7 +35,18 @@
       "name": "Pixel",
       "hostname": "Pixel 11 Pro XL",
       "id": "1084254837",
-      "os": "android"
+      "os": "android",
+      "profile": "phone"
+    },
+    {
+      "slot": "grok",
+      "name": "Grok",
+      "hostname": "helper",
+      "id": "",
+      "os": "linux",
+      "enabled": false,
+      "role": "helper",
+      "profile": "desktop"
     }
   ]
 }
