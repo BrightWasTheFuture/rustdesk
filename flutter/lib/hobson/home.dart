@@ -39,6 +39,10 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
   bool _relay = true;
   bool _privacy = false;
   final _prompt = TextEditingController();
+  final _peerId = TextEditingController();
+  List<String> _recentIds = [];
+  String _otp = '';
+  Timer? _otpTimer;
   List<String> _clips = [];
   String _alert = '';
   String _freeSpace = '';
@@ -56,17 +60,22 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     HobsonBus.alert.addListener(_onBus);
     HobsonBus.previews.addListener(_onBus);
     HobsonBus.refusedId.addListener(_onBus);
+    HobsonBus.unlistedId.addListener(_onBus);
+    _otpTimer = Timer.periodic(const Duration(seconds: 2), (_) => _refreshOtp());
   }
 
   @override
   void dispose() {
     _prompt.dispose();
+    _peerId.dispose();
+    _otpTimer?.cancel();
     _poll?.cancel();
     _syncTimer?.cancel();
     HobsonBus.clips.removeListener(_onBus);
     HobsonBus.alert.removeListener(_onBus);
     HobsonBus.previews.removeListener(_onBus);
     HobsonBus.refusedId.removeListener(_onBus);
+    HobsonBus.unlistedId.removeListener(_onBus);
     WidgetsBinding.instance.removeObserver(this);
     platformFFI.unregisterEventHandler('callback_query_onlines', 'hobson-home');
     super.dispose();
@@ -103,6 +112,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             : privacyOption == 'Y';
         _error = '';
         _clips = _readClips();
+        _recentIds = _readRecent();
       });
       if (_clips.isNotEmpty) HobsonBus.clips.value = _clips;
       _startSync();
@@ -114,6 +124,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
       _loadAlert();
       _loadFreeSpace();
       _loadRefused();
+      _refreshOtp();
     } catch (err) {
       if (mounted) setState(() => _error = '$err');
     }
@@ -172,8 +183,48 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     _sendFiles(picked, paths);
   }
 
+  List<String> _readRecent() {
+    final raw = bind.mainGetLocalOption(key: 'hobson-recent-ids');
+    if (raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded.map((item) => item.toString()).where((s) => s.isNotEmpty).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> _rememberId(String id) async {
+    final next = [id, ..._recentIds.where((item) => item != id)].take(8).toList();
+    await bind.mainSetLocalOption(key: 'hobson-recent-ids', value: jsonEncode(next));
+    if (mounted) setState(() => _recentIds = next);
+  }
+
+  Future<void> _refreshOtp() async {
+    final next = await bind.mainGetTemporaryPassword();
+    if (mounted && next != _otp) setState(() => _otp = next);
+  }
+
+  Future<void> _connectTyped() async {
+    final id = _peerId.text.replaceAll(RegExp(r'\s'), '');
+    if (id.isEmpty) return;
+    await _rememberId(id);
+    HobsonDevice? known;
+    for (final device in _config?.devices ?? const <HobsonDevice>[]) {
+      if (device.hasId && device.id == id) known = device;
+    }
+    if (known != null) {
+      await _connect(known);
+      return;
+    }
+    if (!mounted) return;
+    connect(context, id);
+  }
+
   Future<void> _connect(HobsonDevice device) async {
     if (!device.hasId || device.id == _myId) return;
+    await _rememberId(device.id);
     if (_online[device.id] == false && device.canWake) {
       await _wakeThenConnect(device);
       return;
@@ -406,6 +457,27 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     await _sendCommand(pc, 'hobson:keys $keys', closeAfter: true);
   }
 
+  Widget _unlistedCard() {
+    final id = HobsonBus.unlistedId.value;
+    final name = HobsonBus.unlistedName.value;
+    return Card(
+      color: Colors.amber.shade100,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Unlisted ID $id',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (name.isNotEmpty) Text(name),
+            const Text(
+                'This device is not in the list. It needs the one-time password and Accept.'),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _refusedCard() {
     final id = HobsonBus.refusedId.value;
     final name = HobsonBus.refusedName.value;
@@ -419,8 +491,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             Text('Refused ID $id',
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             if (name.isNotEmpty) Text(name),
-            const Text(
-                'This ID is not in hobson_devices.json. Add it, then rebuild.'),
+            const Text('The password was wrong, or the connection was not accepted.'),
             TextButton(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: id));
@@ -591,6 +662,51 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             ),
           ),
         const SizedBox(height: 12),
+        Text('Connect to ID', style: Theme.of(context).textTheme.titleMedium),
+        TextField(
+          controller: _peerId,
+          decoration: const InputDecoration(
+            hintText: 'Any RustDesk ID',
+          ),
+          onSubmitted: (_) => _connectTyped(),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(onPressed: _connectTyped, child: const Text('Connect')),
+        ),
+        if (_recentIds.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final id in _recentIds)
+                ActionChip(
+                  label: Text(id),
+                  onPressed: () {
+                    _peerId.text = id;
+                    _connectTyped();
+                  },
+                ),
+            ],
+          ),
+        if (_otp.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('One-time password  $_otp'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: _otp));
+                    _toast('Copied one-time password');
+                  },
+                  child: const Text('Copy'),
+                ),
+              ],
+            ),
+          ),
+        if (HobsonBus.unlistedId.value.isNotEmpty) _unlistedCard(),
         if (HobsonBus.refusedId.value.isNotEmpty) _refusedCard(),
         for (final device in config.devices) ...[
           _tile(context, device),

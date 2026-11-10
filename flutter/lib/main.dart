@@ -580,8 +580,13 @@ _registerEventHandler() {
       final text = evt['text']?.toString() ?? 'Blocked a connection';
       final refused = evt['id']?.toString() ?? '';
       if (refused.isNotEmpty) {
-        HobsonBus.refusedId.value = refused;
-        HobsonBus.refusedName.value = evt['peer']?.toString() ?? '';
+        if (evt['kind']?.toString() == 'unlisted') {
+          HobsonBus.unlistedId.value = refused;
+          HobsonBus.unlistedName.value = evt['peer']?.toString() ?? '';
+        } else {
+          HobsonBus.refusedId.value = refused;
+          HobsonBus.refusedName.value = evt['peer']?.toString() ?? '';
+        }
       }
       if (isAndroid) {
         await gFFI.invokeMethod('hobson_notify', {

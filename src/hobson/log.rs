@@ -117,6 +117,18 @@ fn end(key: &str, dir: &str) {
     }));
 }
 
+pub(super) fn unlisted(id: &str, name: &str, ip: &str, ev: &str) {
+    append(json!({
+        "t": get_time(),
+        "dir": "unlisted",
+        "id": id,
+        "name": name,
+        "ip": ip,
+        "ev": ev,
+        "secs": 0,
+    }));
+}
+
 pub(super) fn denied(id: &str, name: &str, ip: &str) {
     append(json!({
         "t": get_time(),

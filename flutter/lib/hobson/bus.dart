@@ -11,6 +11,8 @@ class HobsonBus {
   static final windowFrame = ValueNotifier<Uint8List?>(null);
   static final refusedId = ValueNotifier<String>('');
   static final refusedName = ValueNotifier<String>('');
+  static final unlistedId = ValueNotifier<String>('');
+  static final unlistedName = ValueNotifier<String>('');
 
   static bool ingest(String peerId, String text) {
     if (!text.startsWith('hobson:')) return false;

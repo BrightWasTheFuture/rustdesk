@@ -206,14 +206,8 @@ pub fn allows(id: &str) -> bool {
     !id.is_empty() && known_ids().iter().any(|known| known == id)
 }
 
-pub fn check_outgoing(id: &str) -> Result<(), String> {
-    if allows(id) {
-        Ok(())
-    } else {
-        Err(format!(
-            "Hobson Remote only connects to devices listed in flutter/assets/hobson_devices.json (refused {id})"
-        ))
-    }
+pub fn check_outgoing(_id: &str) -> Result<(), String> {
+    Ok(())
 }
 
 fn trust_secret() -> &'static str {
@@ -264,13 +258,12 @@ pub fn apply_policy() {
     }
     {
         let mut over = config::OVERWRITE_SETTINGS.write().unwrap();
-        over.insert(keys::OPTION_APPROVE_MODE.to_owned(), "password".to_owned());
+        over.insert(keys::OPTION_APPROVE_MODE.to_owned(), "both".to_owned());
         over.insert(
             keys::OPTION_VERIFICATION_METHOD.to_owned(),
-            "use-permanent-password".to_owned(),
+            "use-both-passwords".to_owned(),
         );
-        over.insert("allow-hide-cm".to_owned(), "Y".to_owned());
-        over.insert(keys::OPTION_ID_WHITELIST.to_owned(), whitelist_value());
+        over.insert("allow-hide-cm".to_owned(), "N".to_owned());
         over.insert("enable-lan-discovery".to_owned(), "N".to_owned());
         over.insert(keys::OPTION_ENABLE_FILE_TRANSFER.to_owned(), "Y".to_owned());
         over.insert(keys::OPTION_ENABLE_CLIPBOARD.to_owned(), "Y".to_owned());
@@ -322,6 +315,37 @@ pub fn on_outgoing_closed(id: &str) {
 
 pub fn on_incoming_open(conn_id: i32, id: &str, name: &str) {
     conn_log::begin_incoming(conn_id, id, name);
+    if !allows(id) {
+        on_unlisted(id, name, "", "open");
+    }
+}
+
+pub fn on_unlisted_waiting(id: &str, name: &str, ip: &str) {
+    on_unlisted(id, name, ip, "wait");
+}
+
+fn on_unlisted(id: &str, name: &str, ip: &str, ev: &str) {
+    let label = if name.is_empty() { id } else { name };
+    let text = if ev == "wait" {
+        format!("Unlisted ID {id} is waiting for Accept ({label})")
+    } else {
+        format!("Unlisted ID {id} connected ({label})")
+    };
+    conn_log::unlisted(id, name, ip, ev);
+    notify(&text);
+    #[cfg(feature = "flutter")]
+    {
+        let evt = serde_json::json!({
+            "name": "hobson_alert",
+            "kind": "unlisted",
+            "id": id,
+            "peer": name,
+            "text": text,
+        });
+        if let Ok(evt) = serde_json::to_string(&evt) {
+            crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, evt);
+        }
+    }
 }
 
 pub fn on_incoming_closed(conn_id: i32) {
@@ -330,9 +354,7 @@ pub fn on_incoming_closed(conn_id: i32) {
 
 pub fn on_rejected(id: &str, name: &str, ip: &str) {
     let label = if name.is_empty() { id } else { name };
-    let text = format!(
-        "Refused ID {id}. Add it to flutter/assets/hobson_devices.json and rebuild. ({label})"
-    );
+    let text = format!("Refused connection from ID {id} ({label})");
     conn_log::denied(id, name, ip);
     notify(&text);
     #[cfg(feature = "flutter")]

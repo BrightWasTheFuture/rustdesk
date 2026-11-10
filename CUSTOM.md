@@ -144,15 +144,23 @@ the JSON and rebuild. Do not put the trust secret in this file.
 
 ### Trust secret
 
-Listed devices accept each other with no prompt only when **both** are true:
+The home screen has **Connect to ID**. Any ID can be typed. Recent IDs stay on the device. The tiles are the machines you use every day.
+
+Listed devices still auto-accept when **both** are true:
 
 1. The peer's RustDesk ID is in the device list. That ID is self-reported in
    the login message, so the list is a filter, not a proof of identity.
-2. The peer proves a shared secret. The secret is stored as this device's
-   permanent password. Login hashes it with the salt and challenge from the
-   controlled device, so the password is not sent in the clear. A connection
-   that only claims an allowlisted ID, or that sends no password, is refused
-   before any accept prompt, and the app raises an alert.
+2. The peer proves the shared secret. The secret is the permanent password,
+   and only a listed ID is allowed to use it. Login hashes it with the salt
+   and challenge, so it is not sent in the clear.
+
+Anyone else must type the one-time password shown on the target home screen
+and then be accepted there. Approve mode is `both`. The one-time password
+changes when a session is accepted. An unlisted peer that sends the trust
+secret is refused, and wrong passwords stay rate-limited. Panic unlock,
+clipboard sync, helper control, previews, the title watcher, and
+approve-on-phone stay limited to listed devices. Unlisted connections are
+marked in the connection log and on the home screen.
 
 The secret is compiled in. It is never committed.
 

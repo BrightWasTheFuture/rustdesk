@@ -61,6 +61,10 @@ class HobsonLogEntry {
         return event == 'end' ? 'Outgoing ended · $who' : 'Outgoing · $who';
       case 'denied':
         return id.isEmpty ? 'Refused connection' : 'Refused ID $id';
+      case 'unlisted':
+        return event == 'wait'
+            ? 'Unlisted ID $id waiting for Accept'
+            : 'Unlisted ID $id connected';
       default:
         return who;
     }
