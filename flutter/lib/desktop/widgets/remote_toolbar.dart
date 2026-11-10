@@ -7,6 +7,8 @@ import 'package:flutter_hbb/common/widgets/audio_input.dart';
 import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/common/widgets/keyboard_shortcuts/display.dart';
 import 'package:flutter_hbb/common/widgets/toolbar.dart';
+import 'package:flutter_hbb/hobson/config.dart';
+import 'package:flutter_hbb/hobson/session_bar.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/consts.dart';
@@ -25,6 +27,21 @@ import './popup_menu.dart';
 import './kb_layout_type_chooser.dart';
 import 'package:flutter_hbb/utils/scale.dart';
 import 'package:flutter_hbb/common/widgets/custom_scale_base.dart';
+
+void _hobsonTogglePrivacy(FFI ffi, String id, bool currentlyOn) {
+  final pi = ffi.ffiModel.pi;
+  var implKey = kPrivacyModeImplMag;
+  final impls = pi.platformAdditions[kPlatformAdditionsSupportedPrivacyModeImpl];
+  if (impls is List && impls.isNotEmpty && impls.first is List) {
+    final first = impls.first as List;
+    if (first.isNotEmpty) implKey = first.first.toString();
+  }
+  bind.sessionTogglePrivacyMode(
+    sessionId: ffi.sessionId,
+    implKey: implKey,
+    on: !currentlyOn,
+  );
+}
 
 enum _ToolbarEdge { top, right, bottom, left }
 
@@ -802,6 +819,23 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
 
   Widget _buildToolbar(
       BuildContext context, _ToolbarEdge edge, bool isHorizontal) {
+    if (hobsonUiEnabled()) {
+      return Obx(() {
+        final privacyOn = PrivacyModeState.find(widget.id).isNotEmpty;
+        return HobsonSessionBar(
+          privacyOn: privacyOn,
+          onFullscreen: () =>
+              stateGlobal.setFullscreen(!stateGlobal.fullscreen.value),
+          onFile: () => connect(context, widget.id, isFileTransfer: true),
+          onClipboard: () => bind.sessionToggleOption(
+              sessionId: widget.ffi.sessionId, value: 'disable-clipboard'),
+          onCad: () =>
+              bind.sessionCtrlAltDel(sessionId: widget.ffi.sessionId),
+          onPrivacy: () => _hobsonTogglePrivacy(widget.ffi, widget.id, privacyOn),
+          onClose: () => closeConnection(id: widget.id),
+        );
+      });
+    }
     final List<Widget> toolbarItems = [];
     toolbarItems.add(_PinMenu(state: widget.state));
     toolbarItems.add(Obx(() {

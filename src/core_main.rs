@@ -43,10 +43,13 @@ fn finish_macos_update(result: hbb_common::ResultType<()>) -> Option<CoreMainAct
 /// If it returns [`Some`], the action determines whether to start the UI or report failure.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn core_main() -> Option<CoreMainAction> {
+    crate::hobson::install_identity();
     if !crate::common::global_init() {
         return None;
     }
     crate::load_custom_client();
+    crate::hobson::install_identity();
+    crate::hobson::apply_policy();
     #[cfg(windows)]
     if !crate::platform::windows::bootstrap() {
         // return None to terminate the process

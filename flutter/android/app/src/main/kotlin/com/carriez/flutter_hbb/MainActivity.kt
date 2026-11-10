@@ -251,6 +251,20 @@ class MainActivity : FlutterActivity() {
             _rdClipboardManager = RdClipboardManager(getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
             FFI.setClipboardManager(_rdClipboardManager!!)
         }
+        handleHobsonIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleHobsonIntent(intent)
+    }
+
+    private fun handleHobsonIntent(intent: Intent?) {
+        when (intent?.action) {
+            HobsonTileService.ACTION_START -> requestMediaProjection()
+            Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE -> HobsonShare.capture(this, intent)
+        }
     }
 
     override fun onDestroy() {
@@ -316,6 +330,16 @@ class MainActivity : FlutterActivity() {
                     } ?: let {
                         result.success(false)
                     }
+                }
+                "hobson_take_shared" -> {
+                    result.success(HobsonShare.take())
+                }
+                "hobson_notify" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val title = args?.get("title") as? String ?: "Hobson Remote"
+                    val text = args?.get("text") as? String ?: ""
+                    HobsonNotify.show(this, title, text)
+                    result.success(true)
                 }
                 "check_permission" -> {
                     if (call.arguments is String) {

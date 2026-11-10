@@ -1468,6 +1468,7 @@ impl Connection {
         self.update_failure(failure, false, FAILURE_IDX_ID_WHITELIST);
         self.send_login_error("Your ID is blocked by the peer")
             .await;
+        crate::hobson::on_rejected(&self.lr.my_id, &self.lr.my_name, &self.ip);
         self.post_alarm_audit(
             AlarmAuditType::IdWhitelist,
             json!({ "id": self.lr.my_id.clone(), "ip": self.ip.clone(), "name": self.lr.my_name.clone() }),
@@ -2193,6 +2194,20 @@ impl Connection {
         let mut msg_out = Message::new();
         msg_out.set_login_response(res);
         self.send(msg_out).await;
+        crate::hobson::on_incoming_open(self.inner.id(), &self.lr.my_id, &self.lr.my_name);
+        if crate::hobson::privacy_on_connect()
+            && self.file_transfer.is_none()
+            && !self.view_camera
+            && !self.terminal
+            && self.port_forward_address.is_empty()
+        {
+            let key = privacy_mode::get_cur_impl_key()
+                .filter(|k| !k.is_empty())
+                .unwrap_or_else(|| privacy_mode::DEFAULT_PRIVACY_MODE_IMPL.clone());
+            if !key.is_empty() {
+                self.turn_on_privacy(key).await;
+            }
+        }
         self.update_scoped_login_options().await;
         if let Some((dir, show_hidden)) = self.file_transfer.clone() {
             self.keyboard = false;
@@ -3050,6 +3065,12 @@ impl Connection {
                         return keep_alive;
                     }
                 }
+                if crate::hobson::active() {
+                    self.send_login_error(crate::client::LOGIN_MSG_PASSWORD_WRONG)
+                        .await;
+                    crate::hobson::on_rejected(&lr.my_id, &lr.my_name, &self.ip);
+                    return false;
+                }
                 self.try_start_cm(lr.my_id, lr.my_name, false);
                 if hbb_common::get_version_number(&lr.version)
                     >= hbb_common::get_version_number("1.2.0")
@@ -3071,6 +3092,12 @@ impl Connection {
                         return keep_alive;
                     }
                 }
+                if crate::hobson::active() {
+                    self.send_login_error(crate::client::LOGIN_MSG_PASSWORD_WRONG)
+                        .await;
+                    crate::hobson::on_rejected(&lr.my_id, &lr.my_name, &self.ip);
+                    return false;
+                }
                 self.try_start_cm(lr.my_id, lr.my_name, false);
             } else {
                 let (failure, res) = self.check_failure(0).await;
@@ -3082,7 +3109,11 @@ impl Connection {
                     self.check_update_temporary_password(false);
                     self.send_login_error(crate::client::LOGIN_MSG_PASSWORD_WRONG)
                         .await;
-                    self.try_start_cm(lr.my_id, lr.my_name, false);
+                    if crate::hobson::active() {
+                        crate::hobson::on_rejected(&lr.my_id, &lr.my_name, &self.ip);
+                    } else {
+                        self.try_start_cm(lr.my_id, lr.my_name, false);
+                    }
                 } else {
                     self.update_failure_with_scope(failure, true, 0, FailureScope::Default);
                     if !self.begin_trusted_device().await {
@@ -5306,6 +5337,7 @@ impl Connection {
             return;
         }
         self.closed = true;
+        crate::hobson::on_incoming_closed(self.inner.id());
         // If voice A,B -> C, and A,B has voice call
         // B disconnects, C will reset the voice call input.
         //

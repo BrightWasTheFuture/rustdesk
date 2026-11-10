@@ -1344,6 +1344,9 @@ pub fn session_add(
     }
 
     LocalConfig::set_remote_id(&id);
+    if let Err(err) = crate::hobson::check_outgoing(id) {
+        bail!(err);
+    }
 
     let mut preset_password = password.clone();
     let shared_password = if is_shared_password {
@@ -1382,6 +1385,7 @@ pub fn session_add(
 
     let session = Arc::new(session.clone());
     sessions::insert_session(session_id.to_owned(), conn_type, session.clone());
+    crate::hobson::on_outgoing_open(id);
 
     Ok(session)
 }

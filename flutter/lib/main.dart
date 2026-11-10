@@ -24,6 +24,8 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'common.dart';
+import 'hobson/config.dart';
+import 'hobson/home.dart';
 import 'consts.dart';
 import 'mobile/pages/home_page.dart';
 import 'mobile/pages/server_page.dart';
@@ -139,8 +141,10 @@ void runMainApp(bool startService) async {
   if (startService) {
     gFFI.serverModel.startService();
   }
-  await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
-  gFFI.userModel.refreshCurrentUser();
+  if (!hobsonUiEnabled()) {
+    await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
+    gFFI.userModel.refreshCurrentUser();
+  }
   runApp(App());
 
   bool? alwaysOnTop;
@@ -179,8 +183,10 @@ void runMobileApp() async {
   if (isAndroid) androidChannelInit();
   if (isAndroid) platformFFI.syncAndroidServiceAppDirConfigPath();
   draggablePositions.load();
-  await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
-  gFFI.userModel.refreshCurrentUser();
+  if (!hobsonUiEnabled()) {
+    await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
+    gFFI.userModel.refreshCurrentUser();
+  }
   runApp(App());
   await initUniLinks();
 }
@@ -505,7 +511,9 @@ class _AppState extends State<App> with WidgetsBindingObserver {
               ? const DesktopTabPage()
               : isWeb
                   ? WebHomePage()
-                  : HomePage(),
+                  : hobsonUiEnabled()
+                      ? const HobsonHome()
+                      : HomePage(),
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
@@ -564,6 +572,22 @@ _registerEventHandler() {
     platformFFI.registerEventHandler('language', 'language', (_) async {
       reloadAllWindows();
     });
+  }
+  if (!isDesktop || desktopType == DesktopType.main) {
+    platformFFI.registerEventHandler('hobson_alert', 'hobson_alert',
+        (evt) async {
+      final text = evt['text']?.toString() ?? 'Blocked a connection';
+      if (isAndroid) {
+        await gFFI.invokeMethod('hobson_notify', {
+          'title': kHobsonDisplayName,
+          'text': text,
+        });
+      }
+      final ctx = Get.context;
+      if (ctx != null) {
+        ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(text)));
+      }
+    }, replace: true);
   }
   if (isAndroid) {
     platformFFI.registerEventHandler(

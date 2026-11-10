@@ -4,6 +4,7 @@
 .idea
 .DS_Store
 .env
+hobson/secret
 libsciter-gtk.so
 src/ui/inline.rs
 extractor

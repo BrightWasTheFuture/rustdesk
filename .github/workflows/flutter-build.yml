@@ -29,6 +29,11 @@ env:
   SCITER_NASM_DEBVERSION: "2.15.05-1"
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
+  # Shared password for Hobson Remote trusted auto-accept. Empty is a valid
+  # build: the client still compiles and refuses every login until the secret
+  # is present. Set the repo secret HOBSON_TRUST_SECRET (same value on every
+  # device build). Local builds can use hobson/secret instead.
+  HOBSON_TRUST_SECRET: ${{ secrets.HOBSON_TRUST_SECRET }}
   ANDROID_FLUTTER_VERSION: "3.24.5"
   # Windows arm64 only: the first stable Flutter to ship a native arm64 Windows Dart SDK +
   # engine is 3.44. Every other platform except macOS arm64 (below) stays on FLUTTER_VERSION
