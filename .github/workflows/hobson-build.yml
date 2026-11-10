@@ -174,7 +174,16 @@ jobs:
         env:
           VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
         run: |
-          if ! "$VCPKG_ROOT/vcpkg" install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"; then
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if "$VCPKG_ROOT/vcpkg" install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"; then
+              ok=1
+              break
+            fi
+            echo "vcpkg install failed (attempt ${attempt}); retrying after a GitHub rate limit"
+            sleep $((attempt * 20))
+          done
+          if [ "$ok" != 1 ]; then
             find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
               echo "$_1:"
               cat "$_1"
@@ -214,7 +223,7 @@ jobs:
           sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/HobsonRemote.exe
           popd
           mkdir -p ./dist
           mv ./target/release/rustdesk-portable-packer.exe ./dist/hobson-remote-${{ github.ref_name }}-x86_64.exe
@@ -225,7 +234,7 @@ jobs:
       - name: Build msi
         run: |
           pushd ./res/msi
-          python preprocess.py --arp -d ../../rustdesk
+          python preprocess.py --arp --app-name HobsonRemote -d ../../rustdesk
           nuget restore msi.sln
           msbuild msi.sln -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
           $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
@@ -300,7 +309,17 @@ jobs:
           doNotCache: false
 
       - name: Install vcpkg dependencies
-        run: ./flutter/build_android_deps.sh arm64-v8a
+        run: |
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if ./flutter/build_android_deps.sh arm64-v8a; then
+              ok=1
+              break
+            fi
+            echo "vcpkg android deps failed (attempt ${attempt}); retrying after a GitHub rate limit"
+            sleep $((attempt * 20))
+          done
+          test "$ok" = 1
 
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:

@@ -84,8 +84,10 @@ will refuse to update the installed app (uninstall first).
 
 This branch turns the Flutter client into a private app for three devices.
 The window title and Android label are **Hobson Remote**. The Windows service,
-install directory, and config folder are **HobsonRemote** (no space): the
-installer rejects spaces in the application name. Android installs as
+install directory, program file, and config folder are **HobsonRemote** (no space): the
+installer rejects spaces in the application name. The installed program is
+`HobsonRemote.exe`, and the privacy-mode helper copied beside it is
+`RuntimeBroker_HobsonRemote.exe`. Android installs as
 `com.hobson.remote` (`applicationId` in `flutter/android/app/build.gradle`),
 so it can sit next to the official RustDesk app. The Kotlin namespace stays
 `com.carriez.flutter_hbb`, which is why activity and service class names in

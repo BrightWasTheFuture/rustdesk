@@ -94,7 +94,7 @@ BEGIN
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "HobsonRemote" "\0"
             VALUE "LegalCopyright", "Copyright © 2026 Hobson Remote." "\0"
-            VALUE "OriginalFilename", "rustdesk.exe" "\0"
+            VALUE "OriginalFilename", "HobsonRemote.exe" "\0"
             VALUE "ProductName", "Hobson Remote" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
