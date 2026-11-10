@@ -21,6 +21,8 @@
 mod conn_log;
 #[cfg(windows)]
 mod banner;
+#[cfg(target_os = "linux")]
+mod headless;
 #[cfg(windows)]
 mod preview;
 
@@ -122,6 +124,8 @@ struct Device {
     enabled: bool,
     #[serde(default)]
     role: String,
+    #[serde(default)]
+    kind: String,
     #[serde(default)]
     profile: String,
     #[serde(default)]
@@ -295,6 +299,10 @@ pub fn apply_policy() {
     }
     start_keep_awake();
     start_title_watch();
+    #[cfg(target_os = "linux")]
+    if Config::get_option("allow-linux-headless").is_empty() {
+        Config::set_option("allow-linux-headless".into(), "Y".into());
+    }
     log::info!(
         "{} ready. allowlist={} relay_default={} trust_secret={}",
         file().display_name,
@@ -505,6 +513,12 @@ pub fn helper_arrived(label: &str) {
     }
 }
 
+/// True when this Linux host has no seat and Hobson should open a dummy X session.
+#[cfg(target_os = "linux")]
+pub fn prepare_linux_headless() -> bool {
+    headless::prepare()
+}
+
 pub fn helper_left() {
     #[cfg(windows)]
     banner::hide();
@@ -663,9 +677,11 @@ mod tests {
     #[test]
     fn device_list_has_the_three_machines() {
         let devices = &file().devices;
-        assert_eq!(devices.len(), 4);
-        assert!(!devices[3].enabled);
-        assert_eq!(devices[3].role, "helper");
+        assert_eq!(devices.len(), 5);
+        assert_eq!(devices[3].id(), "731900004");
+        assert_eq!(devices[3].kind, "server");
+        assert!(!devices[4].enabled);
+        assert_eq!(devices[4].role, "helper");
         assert_eq!(file().app_name, "HobsonRemote");
         assert_eq!(devices[0].hostname, "DESKTOP-T5EC28K");
         assert_eq!(devices[0].id(), "526130151");
@@ -687,7 +703,7 @@ mod tests {
         assert!(!allows("19930406"));
         assert_eq!(
             whitelist_value(),
-            "526130151,199304064,1374413193,1084254837"
+            "526130151,199304064,1374413193,1084254837,731900004"
         );
     }
 

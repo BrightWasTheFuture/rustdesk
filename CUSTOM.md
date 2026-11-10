@@ -106,8 +106,39 @@ Edit one file, then rebuild:
 | pc | PC | DESKTOP-T5EC28K | `526130151` |
 | laptop | Laptop | DESKTOP-0FGJD6S | `199304064` |
 | phone | Pixel | Pixel 11 Pro XL | `1374413193` (`1084254837` is still allowed as an alias) |
+| server | Hetzner server | 65.108.148.37 | `731900004` |
 
 The PC tile also has MAC `58-04-4F-F1-38-DF` for Wake-on-LAN on `192.168.0.x`.
+The Hetzner row is `kind: server`: the tile has no Wake-on-LAN, the session
+hides the privacy-screen button, and keep-awake stays a Windows-only behavior.
+
+### Hetzner server
+
+The machine is the Ubuntu CPX02 at `65.108.148.37`. It already runs hbbs/hbbr
+in Docker. Hobson on that host is a fourth listed device, ID `731900004`.
+
+On Linux, an empty `allow-linux-headless` option is set to `Y`. With no seat0
+session, the service starts `Xorg :99` on the dummy driver and `startxfce4`
+when those programs are installed. A real logged-in seat is left alone.
+
+Install, then seed the ID before the first service start so hbbs registers
+`731900004` instead of a random one:
+
+```
+sudo apt-get update
+sudo apt-get install -y xserver-xorg-video-dummy xfce4
+sudo apt-get install -y ./hobson-remote-<tag>-x86_64.deb
+sudo mkdir -p /root/.config/HobsonRemote
+printf "id = '731900004'\n" | sudo tee /root/.config/HobsonRemote/HobsonRemote.toml
+sudo systemctl enable --now rustdesk
+```
+
+The package still installs the program as `/usr/bin/rustdesk` and the unit
+`rustdesk.service` (`/usr/bin/rustdesk --service`). The deb from the Hobson
+workflow is `hobson-remote-<tag>-x86_64.deb`. Rebuild that deb with
+`HOBSON_TRUST_SECRET` set, the same way as the Windows and Android jobs.
+If `HobsonRemote.toml` already exists, set `id = '731900004'` in it before
+starting the service. Do not start the service first and then change the ID.
 Rust (`src/hobson/`) and Flutter both read this file. To change an ID, edit
 the JSON and rebuild. Do not put the trust secret in this file.
 

@@ -40,6 +40,15 @@
       "profile": "phone"
     },
     {
+      "slot": "server",
+      "name": "Hetzner server",
+      "hostname": "65.108.148.37",
+      "id": "731900004",
+      "os": "linux",
+      "kind": "server",
+      "profile": "desktop"
+    },
+    {
       "slot": "grok",
       "name": "Grok",
       "hostname": "helper",

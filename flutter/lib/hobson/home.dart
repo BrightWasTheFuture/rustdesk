@@ -758,6 +758,8 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
         return Icons.smartphone;
       case 'laptop':
         return Icons.laptop;
+      case 'server':
+        return Icons.dns;
       default:
         return Icons.desktop_windows;
     }

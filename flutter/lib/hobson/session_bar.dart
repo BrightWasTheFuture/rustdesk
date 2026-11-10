@@ -14,6 +14,7 @@ class HobsonSessionBar extends StatelessWidget {
     required this.onClipboard,
     required this.onCad,
     required this.onPrivacy,
+    this.showPrivacy = true,
     required this.onClose,
     required this.onScreenshot,
     required this.onMonitors,
@@ -27,6 +28,7 @@ class HobsonSessionBar extends StatelessWidget {
   final VoidCallback onClipboard;
   final VoidCallback onCad;
   final VoidCallback onPrivacy;
+  final bool showPrivacy;
   final VoidCallback onClose;
   final VoidCallback onScreenshot;
   final VoidCallback onMonitors;
@@ -73,11 +75,12 @@ class HobsonSessionBar extends StatelessWidget {
               icon: Icons.keyboard,
               onPressed: onCad,
             ),
-            _button(
-              tooltip: privacyOn ? 'Privacy screen on' : 'Blank physical screen',
-              icon: privacyOn ? Icons.visibility_off : Icons.visibility,
-              onPressed: onPrivacy,
-            ),
+            if (showPrivacy)
+              _button(
+                tooltip: privacyOn ? 'Privacy screen on' : 'Blank physical screen',
+                icon: privacyOn ? Icons.visibility_off : Icons.visibility,
+                onPressed: onPrivacy,
+              ),
             _button(
               tooltip: 'Screenshot',
               icon: Icons.photo_camera_outlined,
