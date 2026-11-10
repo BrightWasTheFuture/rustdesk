@@ -35,14 +35,13 @@ The APK is signed with the existing `ANDROID_SIGNING_KEY`, `ANDROID_ALIAS`,
 passphrase is `HOBSON_TRUST_SECRET`. Rust, Flutter/pub, vcpkg, and Gradle are
 cached so a repeat build should stay well under the full Flutter Tag Build.
 
-Release files are named `hobson-remote-<tag>-x86_64.exe`,
-`hobson-remote-<tag>-x86_64.msi`, and
-`hobson-remote-<tag>-aarch64-signed.apk`. The job refuses an APK whose
-`aapt dump badging` package is not `com.hobson.remote`. That is
+Release files are named `jcb-remote-<tag>-x86_64.exe`,
+`jcb-remote-<tag>-x86_64.msi`, `jcb-remote-<tag>-x86_64.deb`, and
+`jcb-remote-<tag>-aarch64-signed.apk`. The job refuses an APK whose
+`aapt dump badging` package is not `com.jcb.remote`. That is
 `applicationId` in `flutter/android/app/build.gradle`. The Kotlin namespace
 stays `com.carriez.flutter_hbb`, so activity and service class names in the
-manifest still use that prefix. The 1.5.3-3 APK from Flutter Tag Build
-already installs as `com.hobson.remote`.
+manifest still use that prefix. `com.hobson.remote` does not update in place.
 
 The upstream Flutter Tag Build workflow is unchanged. Pushing this new
 workflow file needs a token with the `workflow` scope.
@@ -80,18 +79,28 @@ The APK is signed with a private keystore stored as repo secrets
 `ANDROID_KEY_PASSWORD`. Keep the same keystore for future builds, otherwise Android
 will refuse to update the installed app (uninstall first).
 
-## Hobson Remote
+## JCB Remote
 
-This branch turns the Flutter client into a private app for three devices.
-The window title and Android label are **Hobson Remote**. The Windows service,
-install directory, and config folder are **HobsonRemote** (no space): the
-installer rejects spaces in the application name. Android installs as
-`com.hobson.remote` (`applicationId` in `flutter/android/app/build.gradle`),
-so it can sit next to the official RustDesk app. The Kotlin namespace stays
-`com.carriez.flutter_hbb`, which is why activity and service class names in
-the APK still use that prefix. `aapt dump badging` on the 1.5.3-3 APK reports
-`package: name='com.hobson.remote'`. The first install is a new app; later
-updates still need the same `ANDROID_SIGNING_KEY` keystore.
+This branch turns the Flutter client into a private app for these devices.
+The window title, Android label, Linux menu name, Start Menu shortcut, and
+tray tooltip are **JCB Remote**. The Windows service, install directory,
+program file, and config folder are **JCBRemote** (no space): the installer
+rejects spaces in the application name. The installed program is
+`JCBRemote.exe` in `C:\Program Files\JCBRemote\`, and the privacy-mode helper
+copied beside it is `RuntimeBroker_JCBRemote.exe`. A previous HobsonRemote
+service is stopped on install, and a missing JCBRemote config is copied from
+the HobsonRemote config directory so the desktop ID is kept.
+
+Android installs as `com.jcb.remote` (`applicationId` in
+`flutter/android/app/build.gradle`), so it can sit next to the official
+RustDesk app. The Kotlin namespace stays `com.carriez.flutter_hbb`, which is
+why activity and service class names in the APK still use that prefix.
+`com.hobson.remote` will not update to this package: uninstall is not
+required, but the Pixel needs a fresh install of `com.jcb.remote`. That
+install does not keep the old app's data, so the phone can come up with a
+new RustDesk ID. The device list still has `1374413193` until that new ID is
+known. Later updates of `com.jcb.remote` still need the same
+`ANDROID_SIGNING_KEY` keystore.
 
 ### Device list
 
@@ -103,23 +112,56 @@ Edit one file, then rebuild:
 |---|---|---|---|
 | pc | PC | DESKTOP-T5EC28K | `526130151` |
 | laptop | Laptop | DESKTOP-0FGJD6S | `199304064` |
-| phone | Pixel | Pixel 11 Pro XL | `1084254837` |
+| phone | Pixel | Pixel 11 Pro XL | `1374413193` (`1084254837` is still allowed as an alias) |
+| server | Hetzner server | 65.108.148.37 | `731900004` |
 
 The PC tile also has MAC `58-04-4F-F1-38-DF` for Wake-on-LAN on `192.168.0.x`.
+The Hetzner row is `kind: server`: the tile has no Wake-on-LAN, the session
+hides the privacy-screen button, and keep-awake stays a Windows-only behavior.
+
+### Hetzner server
+
+The machine is the Ubuntu CPX02 at `65.108.148.37`. It already runs hbbs/hbbr
+in Docker. Hobson on that host is a fourth listed device, ID `731900004`.
+
+On Linux, an empty `allow-linux-headless` option is set to `Y`. With no seat0
+session, the service starts `Xorg :99` on the dummy driver and `startxfce4`
+when those programs are installed. A real logged-in seat is left alone.
+
+Install, then seed the ID before the first service start so hbbs registers
+`731900004` instead of a random one:
+
+```
+sudo apt-get update
+sudo apt-get install -y xserver-xorg-video-dummy xfce4
+sudo apt-get install -y ./jcb-remote-<tag>-x86_64.deb
+sudo mkdir -p /root/.config/JCBRemote
+printf "id = '731900004'\n" | sudo tee /root/.config/JCBRemote/JCBRemote.toml
+sudo systemctl enable --now rustdesk
+```
+
+The package still installs the program as `/usr/bin/rustdesk` and the unit
+`rustdesk.service` (`/usr/bin/rustdesk --service`). The menu entry is
+**JCB Remote**. The deb from the JCB workflow is `jcb-remote-<tag>-x86_64.deb`.
+Rebuild that deb with `HOBSON_TRUST_SECRET` set, the same way as the Windows
+and Android jobs. If `JCBRemote.toml` already exists, set `id = '731900004'`
+in it before starting the service. A config left in `/root/.config/HobsonRemote`
+is copied into `JCBRemote` on first start when the new file is missing.
+Do not start the service first and then change the ID.
 Rust (`src/hobson/`) and Flutter both read this file. To change an ID, edit
 the JSON and rebuild. Do not put the trust secret in this file.
 
+### SECURITY
+
+Any JCB Remote install can control any other JCB Remote install by typing its ID. There is no password and no Accept click. Give this build only to people you trust.
+
 ### Trust secret
 
-Listed devices accept each other with no prompt only when **both** are true:
+The home screen has **Connect to ID**. Any ID can be typed. Recent IDs stay on the device. The tiles are the machines you use every day.
 
-1. The peer's RustDesk ID is in the device list. That ID is self-reported in
-   the login message, so the list is a filter, not a proof of identity.
-2. The peer proves a shared secret. The secret is stored as this device's
-   permanent password. Login hashes it with the salt and challenge from the
-   controlled device, so the password is not sent in the clear. A connection
-   that only claims an allowlisted ID, or that sends no password, is refused
-   before any accept prompt, and the app raises an alert.
+Every incoming connection is accepted. The peer's ID is not checked. Unlisted connections are still written to the connection log and shown on the home screen.
+
+`HOBSON_TRUST_SECRET` and the device list are not required to connect. They only gate the extra features: panic unlock, clipboard sync, helper control, previews, the title watcher, and approve-on-phone. The list compares the ID the peer reports, so it is a filter, not a proof of identity.
 
 The secret is compiled in. It is never committed.
 
@@ -129,11 +171,12 @@ The secret is compiled in. It is never committed.
   passphrase. `.github/workflows/flutter-build.yml` passes it into the build.
   Pushing that workflow file needs a token with the `workflow` scope.
 
-Use the same secret for every device. A build with no secret still compiles,
-but trusted auto-accept stays off and incoming logins are refused.
+Use the same secret for every device. A build with no secret still compiles
+and still accepts connections by ID. The extra features above stay off until
+the secret is set.
 
-Changing the secret means rebuilding and reinstalling all three devices.
-Until they all have the new secret, they cannot connect to each other.
+Changing the secret means rebuilding and reinstalling every device that should
+keep those extra features. Connections keep working while the secret differs.
 
 ### What the home screen does
 
@@ -164,13 +207,13 @@ PC's BIOS and NIC have Wake-on-LAN enabled.
 
 The history icon opens the connection log (time, device, duration, and
 blocked attempts). The log file is `hobson-connections.json` in the
-HobsonRemote config directory. A blocked ID also raises a system notification
+JCBRemote config directory. A blocked ID also raises a system notification
 (Windows toast, Linux `notify-send`, Android notification).
 
 ### Customising further
 
 Flutter UI for the new screen is `flutter/lib/hobson/`. Policy (allowlist,
-password, relay, privacy) is `src/hobson/`. Commit to `custom` and push a
+incoming accept, relay, privacy) is `src/hobson/`. Commit to `custom` and push a
 version tag to rebuild, as below.
 
 ## Daily use
@@ -197,7 +240,7 @@ A helper device shows **Helper has control · Take back** on the viewer's sessio
 
 ### Agent alerts and what Approve cannot do
 
-`HobsonRemote.exe --hobson-notify "message"` writes an alert and shows a Windows toast. The next clipboard/preview sync (or a running session) delivers that text to the phone, which shows Approve and Deny. Those buttons type `y` or `n` and Enter into whatever window is focused on the PC.
+`JCBRemote.exe --hobson-notify "message"` writes an alert and shows a Windows toast. The next clipboard/preview sync (or a running session) delivers that text to the phone, which shows Approve and Deny. Those buttons type `y` or `n` and Enter into whatever window is focused on the PC.
 
 Turn on `watch_titles` to raise the same alert when a visible window title contains one of `title_patterns`. A title match is reported at most once every three minutes.
 
@@ -211,7 +254,7 @@ Claude Code can call the same command from its hooks. In the project's `.claude/
         "hooks": [
           {
             "type": "command",
-            "command": "HobsonRemote.exe --hobson-notify \"Claude Code needs you\""
+            "command": "JCBRemote.exe --hobson-notify \"Claude Code needs you\""
           }
         ]
       }
@@ -221,7 +264,7 @@ Claude Code can call the same command from its hooks. In the project's `.claude/
         "hooks": [
           {
             "type": "command",
-            "command": "HobsonRemote.exe --hobson-notify \"Claude Code finished\""
+            "command": "JCBRemote.exe --hobson-notify \"Claude Code finished\""
           }
         ]
       }
@@ -230,7 +273,7 @@ Claude Code can call the same command from its hooks. In the project's `.claude/
 }
 ```
 
-Use the full path to `HobsonRemote.exe` if it is not on `PATH`. Cursor can run the same command from a terminal hook or a user rule when an agent stops.
+Use the full path to `JCBRemote.exe` if it is not on `PATH`. Cursor can run the same command from a terminal hook or a user rule when an agent stops.
 
 Approve and Deny cannot accept a Windows UAC prompt. `consent.exe` runs on the secure desktop (the winlogon desktop), which is a different desktop from the one RustDesk captures and the one `hobson:keys` types into. Windows does not give a remote session input or pixels on that desktop unless the session is already elevated and the secure desktop is disabled in policy. Hobson does not do either. A UAC prompt still has to be answered on the PC itself, or by RustDesk's own elevation prompt when that path is available. The Approve button is only for a normal window that is waiting for `y` or `n`.
 

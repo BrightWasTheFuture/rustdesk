@@ -50,7 +50,7 @@ class HobsonTileService : TileService() {
     }
 
     companion object {
-        const val ACTION_START = "com.hobson.remote.TILE_START"
-        const val ACTION_STOP = "com.hobson.remote.TILE_STOP"
+        const val ACTION_START = "com.jcb.remote.TILE_START"
+        const val ACTION_STOP = "com.jcb.remote.TILE_STOP"
     }
 }

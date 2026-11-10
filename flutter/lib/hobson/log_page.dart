@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'config.dart';
 
 /// Same file the Rust side writes. Desktop paths follow the `directories`
-/// crate (`ProjectDirs::config_dir` for app name `HobsonRemote`). Android
+/// crate (`ProjectDirs::config_dir` for app name `JCBRemote`). Android
 /// uses the documents directory passed to `mainInit` as `APP_DIR`.
 Future<File> hobsonAlertsFile() async {
   final log = await hobsonLogFile();
@@ -60,7 +60,9 @@ class HobsonLogEntry {
       case 'out':
         return event == 'end' ? 'Outgoing ended · $who' : 'Outgoing · $who';
       case 'denied':
-        return 'Blocked · $who';
+        return id.isEmpty ? 'Refused connection' : 'Refused ID $id';
+      case 'unlisted':
+        return 'Unlisted ID $id connected';
       default:
         return who;
     }
@@ -71,7 +73,9 @@ class HobsonLogEntry {
         '${time.year.toString().padLeft(4, '0')}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     final bits = <String>[clock];
-    if (id.isNotEmpty) bits.add('ID $id');
+    if (direction == 'denied') {
+      bits.add('Connection refused');
+    } else if (id.isNotEmpty) bits.add('ID $id');
     if (event == 'end') bits.add(_formatDuration(seconds));
     if (ip.isNotEmpty) bits.add(ip);
     return bits.join('  ·  ');
@@ -137,6 +141,9 @@ class _HobsonLogPageState extends State<HobsonLogPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: kJcbBlue,
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
         title: const Text('Connections'),
         actions: [
           IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),

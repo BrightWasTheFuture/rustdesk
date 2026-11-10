@@ -1375,6 +1375,10 @@ pub fn get_local_option(key: &str) -> String {
 }
 
 pub fn get_audit_server(api: String, custom: String, typ: String) -> String {
+    // OSS hbbs has no /api/audit. Only post when an API server was configured.
+    if api.trim().is_empty() {
+        return "".to_owned();
+    }
     let url = get_api_server(api, custom);
     if url.is_empty() || is_public(&url) {
         return "".to_owned();

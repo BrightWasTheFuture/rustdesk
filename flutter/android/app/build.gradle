@@ -103,7 +103,7 @@ android {
         // the relative class names in AndroidManifest.xml keep compiling.
         // Component class names in the APK therefore still start with
         // com.carriez.flutter_hbb. That is the code package, not the app id.
-        applicationId "com.hobson.remote"
+        applicationId "com.jcb.remote"
         minSdkVersion 22
         targetSdkVersion 36
         versionCode flutterVersionCode.toInteger()

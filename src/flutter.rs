@@ -1344,9 +1344,6 @@ pub fn session_add(
     }
 
     LocalConfig::set_remote_id(&id);
-    if let Err(err) = crate::hobson::check_outgoing(id) {
-        bail!(err);
-    }
 
     let mut preset_password = password.clone();
     let shared_password = if is_shared_password {

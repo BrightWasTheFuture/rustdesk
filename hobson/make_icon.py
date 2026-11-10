@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the Hobson Remote icon (teal tile, white H) as PNG and ICO."""
+"""Draw the JCB Remote icon (teal tile, white H) as PNG and ICO."""
 
 import struct
 import zlib

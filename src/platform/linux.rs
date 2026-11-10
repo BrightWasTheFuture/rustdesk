@@ -1348,6 +1348,19 @@ pub fn start_os_service() {
                 force_stop_server();
                 start_server(Some(&desktop), &mut user_server);
             }
+        } else if crate::hobson::prepare_linux_headless() {
+            if should_start_server(
+                true,
+                false,
+                &mut uid,
+                &desktop,
+                &mut cm0,
+                &mut last_restart,
+                &mut server,
+            ) {
+                force_stop_server();
+                start_server(None, &mut server);
+            }
         } else {
             force_stop_server();
             stop_server(&mut user_server);

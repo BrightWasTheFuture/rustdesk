@@ -39,6 +39,8 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
   bool _relay = true;
   bool _privacy = false;
   final _prompt = TextEditingController();
+  final _peerId = TextEditingController();
+  List<String> _recentIds = [];
   List<String> _clips = [];
   String _alert = '';
   String _freeSpace = '';
@@ -55,16 +57,21 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     HobsonBus.clips.addListener(_onBus);
     HobsonBus.alert.addListener(_onBus);
     HobsonBus.previews.addListener(_onBus);
+    HobsonBus.refusedId.addListener(_onBus);
+    HobsonBus.unlistedId.addListener(_onBus);
   }
 
   @override
   void dispose() {
     _prompt.dispose();
+    _peerId.dispose();
     _poll?.cancel();
     _syncTimer?.cancel();
     HobsonBus.clips.removeListener(_onBus);
     HobsonBus.alert.removeListener(_onBus);
     HobsonBus.previews.removeListener(_onBus);
+    HobsonBus.refusedId.removeListener(_onBus);
+    HobsonBus.unlistedId.removeListener(_onBus);
     WidgetsBinding.instance.removeObserver(this);
     platformFFI.unregisterEventHandler('callback_query_onlines', 'hobson-home');
     super.dispose();
@@ -79,6 +86,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
       _takePanicIntent();
       _noteClipboard();
       _loadAlert();
+      _loadRefused();
     }
   }
 
@@ -100,6 +108,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             : privacyOption == 'Y';
         _error = '';
         _clips = _readClips();
+        _recentIds = _readRecent();
       });
       if (_clips.isNotEmpty) HobsonBus.clips.value = _clips;
       _startSync();
@@ -110,6 +119,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
       _noteClipboard();
       _loadAlert();
       _loadFreeSpace();
+      _loadRefused();
     } catch (err) {
       if (mounted) setState(() => _error = '$err');
     }
@@ -168,8 +178,43 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     _sendFiles(picked, paths);
   }
 
+  List<String> _readRecent() {
+    final raw = bind.mainGetLocalOption(key: 'hobson-recent-ids');
+    if (raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded.map((item) => item.toString()).where((s) => s.isNotEmpty).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> _rememberId(String id) async {
+    final next = [id, ..._recentIds.where((item) => item != id)].take(8).toList();
+    await bind.mainSetLocalOption(key: 'hobson-recent-ids', value: jsonEncode(next));
+    if (mounted) setState(() => _recentIds = next);
+  }
+
+  Future<void> _connectTyped() async {
+    final id = _peerId.text.replaceAll(RegExp(r'\s'), '');
+    if (id.isEmpty) return;
+    await _rememberId(id);
+    HobsonDevice? known;
+    for (final device in _config?.devices ?? const <HobsonDevice>[]) {
+      if (device.hasId && device.id == id) known = device;
+    }
+    if (known != null) {
+      await _connect(known);
+      return;
+    }
+    if (!mounted) return;
+    connect(context, id);
+  }
+
   Future<void> _connect(HobsonDevice device) async {
     if (!device.hasId || device.id == _myId) return;
+    await _rememberId(device.id);
     if (_online[device.id] == false && device.canWake) {
       await _wakeThenConnect(device);
       return;
@@ -296,6 +341,25 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadRefused() async {
+    if (HobsonBus.refusedId.value.isNotEmpty) return;
+    try {
+      final file = await hobsonLogFile();
+      if (!await file.exists()) return;
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! List) return;
+      for (final item in decoded.reversed) {
+        if (item is Map && item['dir'] == 'denied') {
+          final id = (item['id'] ?? '').toString();
+          if (id.isEmpty) return;
+          HobsonBus.refusedId.value = id;
+          HobsonBus.refusedName.value = (item['name'] ?? '').toString();
+          return;
+        }
+      }
+    } catch (_) {}
+  }
+
   void _onBus() {
     if (!mounted) return;
     setState(() {
@@ -364,6 +428,69 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     return other;
   }
 
+  Future<void> _showPrompt() async {
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Prompt for the PC'),
+        content: TextField(
+          controller: _prompt,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Typed here, pasted into the focused window on the PC',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Paste into PC'),
+          ),
+        ],
+      ),
+    );
+    if (sent == true) await _pastePrompt();
+  }
+
+  Future<void> _showClips() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clipboard'),
+        content: _clips.isEmpty
+            ? const Text('Nothing copied yet.')
+            : SizedBox(
+                width: double.maxFinite,
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final clip in _clips)
+                      ListTile(
+                        dense: true,
+                        title: Text(clip,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: clip));
+                          Navigator.pop(context);
+                          _toast('Copied.');
+                        },
+                      ),
+                  ],
+                ),
+              ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _pastePrompt() async {
     final text = _prompt.text.trim();
     if (text.isEmpty) return;
@@ -381,6 +508,53 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     if (pc == null) return;
     setState(() => _alert = '');
     await _sendCommand(pc, 'hobson:keys $keys', closeAfter: true);
+  }
+
+  Widget _unlistedCard() {
+    final id = HobsonBus.unlistedId.value;
+    final name = HobsonBus.unlistedName.value;
+    return Card(
+      color: Colors.amber.shade100,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Unlisted ID $id',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (name.isNotEmpty) Text(name),
+            const Text('This device is not in the list. It connected by ID.'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _refusedCard() {
+    final id = HobsonBus.refusedId.value;
+    final name = HobsonBus.refusedName.value;
+    return Card(
+      color: Colors.red.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Refused ID $id',
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            if (name.isNotEmpty) Text(name),
+            const Text('This device refused the connection.'),
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: id));
+                _toast('Copied refused ID $id');
+              },
+              child: const Text('Copy ID'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _alertCard() {
@@ -450,7 +624,17 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => SettingsPage()),
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            backgroundColor: kJcbBlue,
+            foregroundColor: Colors.white,
+            iconTheme: const IconThemeData(color: Colors.white),
+            title: const Text('Settings'),
+          ),
+          body: SettingsPage(),
+        ),
+      ),
     );
   }
 
@@ -478,6 +662,9 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
     if (isDesktop) return body;
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: kJcbBlue,
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
         title: Text(_config?.displayName ?? kHobsonDisplayName),
         actions: _actions(),
       ),
@@ -487,6 +674,18 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
 
   List<Widget> _actions() {
     return [
+      PopupMenuButton<String>(
+        tooltip: 'Tools',
+        icon: const Icon(Icons.more_vert),
+        onSelected: (value) {
+          if (value == 'prompt') _showPrompt();
+          if (value == 'clips') _showClips();
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(value: 'prompt', child: Text('Prompt for the PC')),
+          PopupMenuItem(value: 'clips', child: Text('Clipboard')),
+        ],
+      ),
       IconButton(
         tooltip: 'Connections',
         onPressed: _openLog,
@@ -523,7 +722,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
         const SizedBox(height: 8),
         Text(
           _myId.isEmpty
-              ? 'This device has no RustDesk ID yet'
+              ? 'This device has no ID yet'
               : 'This device  ·  ID $_myId',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
@@ -540,7 +739,41 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             ),
           ),
         const SizedBox(height: 12),
-        for (final device in config.devices) ...[
+        TextField(
+          controller: _peerId,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Connect to ID',
+            hintText: 'Device ID',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (_) => _connectTyped(),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton(
+            onPressed: _connectTyped,
+            child: const Text('Connect'),
+          ),
+        ),
+        if (_recentIds.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final id in _recentIds)
+                ActionChip(
+                  label: Text(id),
+                  onPressed: () {
+                    _peerId.text = id;
+                    _connectTyped();
+                  },
+                ),
+            ],
+          ),
+        if (HobsonBus.unlistedId.value.isNotEmpty) _unlistedCard(),
+        if (HobsonBus.refusedId.value.isNotEmpty) _refusedCard(),
+        for (final device in config.devices.where((device) => device.enabled)) ...[
           _tile(context, device),
           const SizedBox(height: 12),
         ],
@@ -550,36 +783,13 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(_freeSpace, style: const TextStyle(color: Colors.orange)),
           ),
-        TextField(
-          controller: _prompt,
-          decoration: const InputDecoration(
-            labelText: 'Prompt for the PC',
-            hintText: 'Typed here, pasted into the focused window on the PC',
-          ),
-        ),
         Align(
           alignment: Alignment.centerLeft,
-          child: TextButton(
-            onPressed: _pastePrompt,
-            child: const Text('Paste into PC'),
-          ),
-        ),
-        if (_clips.isNotEmpty) ...[
-          Text('Clipboard', style: Theme.of(context).textTheme.titleSmall),
-          for (final clip in _clips)
-            ListTile(
-              dense: true,
-              title: Text(clip, maxLines: 2, overflow: TextOverflow.ellipsis),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: clip));
-                _toast(
-                    'Copied. A connected session receives it through clipboard sync.');
-              },
+          child: FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC62828),
+              foregroundColor: Colors.white,
             ),
-        ],
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton(
             onPressed: _panic,
             child: const Text('Panic lock'),
           ),
@@ -599,17 +809,12 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
             contentPadding: EdgeInsets.zero,
             title: const Text('Blank this screen for trusted sessions'),
             subtitle: const Text(
-                'When a listed device connects, turn on RustDesk privacy mode so the physical monitor goes black.'),
+                'When a listed device connects, blank the physical monitor.'),
             value: _privacy,
             onChanged: (value) {
               _setPrivacy(value);
             },
           ),
-        const SizedBox(height: 8),
-        Text(
-          'Device IDs live in flutter/assets/hobson_devices.json. Drag a file onto a tile to send it to that device\'s Downloads folder.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
       ],
     );
   }
@@ -634,6 +839,8 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
                       Text(device.name,
                           style: Theme.of(context).textTheme.titleMedium),
                       Text(device.hostname,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodySmall),
                     ],
                   ),
@@ -654,11 +861,7 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
               ),
             ],
             const SizedBox(height: 8),
-            Text(!device.enabled
-                ? 'Disabled until you turn it on in hobson_devices.json'
-                : device.hasId
-                    ? 'ID ${device.id}'
-                    : 'ID not set yet'),
+            Text(device.hasId ? 'ID ${device.id}' : 'ID not set yet'),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -706,6 +909,8 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
         return Icons.smartphone;
       case 'laptop':
         return Icons.laptop;
+      case 'server':
+        return Icons.dns;
       default:
         return Icons.desktop_windows;
     }

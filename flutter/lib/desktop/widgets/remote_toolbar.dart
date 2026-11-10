@@ -8,6 +8,7 @@ import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/common/widgets/keyboard_shortcuts/display.dart';
 import 'package:flutter_hbb/common/widgets/toolbar.dart';
 import 'package:flutter_hbb/hobson/config.dart';
+import 'package:flutter_hbb/hobson/devices.dart';
 import 'package:flutter_hbb/hobson/monitors.dart';
 import 'package:flutter_hbb/hobson/session_bar.dart';
 import 'package:flutter_hbb/hobson/shots.dart';
@@ -834,6 +835,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
               sessionId: widget.ffi.sessionId, value: 'disable-clipboard'),
           onCad: () =>
               bind.sessionCtrlAltDel(sessionId: widget.ffi.sessionId),
+          showPrivacy: !HobsonDevices.isServerId(widget.id),
           onPrivacy: () => _hobsonTogglePrivacy(widget.ffi, widget.id, privacyOn),
           onClose: () => closeConnection(id: widget.id),
           onScreenshot: () {

@@ -16,6 +16,7 @@ import 'package:flutter_hbb/desktop/screen/desktop_port_forward_screen.dart';
 import 'package:flutter_hbb/desktop/screen/desktop_remote_screen.dart';
 import 'package:flutter_hbb/desktop/screen/desktop_terminal_screen.dart';
 import 'package:flutter_hbb/desktop/widgets/refresh_wrapper.dart';
+import 'package:flutter_hbb/hobson/bus.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -577,6 +578,16 @@ _registerEventHandler() {
     platformFFI.registerEventHandler('hobson_alert', 'hobson_alert',
         (evt) async {
       final text = evt['text']?.toString() ?? 'Blocked a connection';
+      final refused = evt['id']?.toString() ?? '';
+      if (refused.isNotEmpty) {
+        if (evt['kind']?.toString() == 'unlisted') {
+          HobsonBus.unlistedId.value = refused;
+          HobsonBus.unlistedName.value = evt['peer']?.toString() ?? '';
+        } else {
+          HobsonBus.refusedId.value = refused;
+          HobsonBus.refusedName.value = evt['peer']?.toString() ?? '';
+        }
+      }
       if (isAndroid) {
         await gFFI.invokeMethod('hobson_notify', {
           'title': kHobsonDisplayName,

@@ -351,7 +351,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "hobson_notify" -> {
                     val args = call.arguments as? Map<*, *>
-                    val title = args?.get("title") as? String ?: "Hobson Remote"
+                    val title = args?.get("title") as? String ?: "JCB Remote"
                     val text = args?.get("text") as? String ?: ""
                     HobsonNotify.show(this, title, text)
                     result.success(true)

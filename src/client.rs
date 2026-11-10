@@ -4776,7 +4776,7 @@ pub async fn handle_hash(
 
     let password = if password.is_empty() {
         // login without password, the remote side can click accept
-        if !request_approval {
+        if !request_approval && !crate::hobson::active() {
             interface.msgbox("input-password", "Password Required", "", "");
         }
         Vec::new()
@@ -4787,7 +4787,7 @@ pub async fn handle_hash(
         hasher.finalize()[..].into()
     };
 
-    if request_approval {
+    if request_approval && !crate::hobson::active() {
         interface.msgbox(
             "wait-remote-accept-nook",
             "Prompt",

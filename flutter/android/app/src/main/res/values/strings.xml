@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Hobson Remote</string>
-    <string name="accessibility_service_description">Allow your other Hobson Remote devices to control this phone using virtual touch, when screen sharing is established</string>
-    <string name="foreground_service_special_use_subtype">Keeps the Hobson Remote host available for the devices listed in this build, and shows a foreground notification without starting screen capture before you approve it.</string>
+    <string name="app_name">JCB Remote</string>
+    <string name="accessibility_service_description">Allow your other JCB Remote devices to control this phone using virtual touch, when screen sharing is established</string>
+    <string name="foreground_service_special_use_subtype">Keeps the JCB Remote host available for the devices listed in this build, and shows a foreground notification without starting screen capture before you approve it.</string>
 </resources>

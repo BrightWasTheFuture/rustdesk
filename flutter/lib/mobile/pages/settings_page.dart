@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import '../../common.dart';
+import '../../hobson/config.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
 import '../../consts.dart';
@@ -23,6 +24,16 @@ import '../widgets/dialog.dart';
 import 'home_page.dart';
 import 'mobile_keyboard_shortcuts_page.dart';
 import 'scan_page.dart';
+
+String _recordingDirectoryLabel(String path) {
+  if (!hobsonUiEnabled()) return path;
+  final parts = path.split(RegExp(r'[\\/]')).where((part) => part.isNotEmpty);
+  final last = parts.isEmpty ? '' : parts.last;
+  if (last.isEmpty || last == 'files' || last == 'cache') {
+    return 'On this phone';
+  }
+  return last;
+}
 
 class SettingsPage extends StatefulWidget implements PageShape {
   @override
@@ -108,6 +119,7 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
   var _isUsingPublicServer = false;
   var _allowAskForNoteAtEndOfConnection = false;
   var _preventSleepWhileConnected = true;
+  var _showAdvanced = false;
 
   _SettingsState() {
     _enableAbr = option2bool(
@@ -294,7 +306,7 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
     final customClientSection = CustomSettingsSection(
         child: Column(
       children: [
-        if (bind.isCustomClient())
+        if (bind.isCustomClient() && !hobsonUiEnabled())
           Align(
             alignment: Alignment.center,
             child: loadPowered(context),
@@ -431,29 +443,30 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
           changeWhiteList(callback: update);
         },
       ),
-      SettingsTile.switchTile(
-        title: Row(children: [
-          Expanded(child: Text(translate('Use ID whitelisting'))),
-          Offstage(
-                  offstage: !_onlyIdWhiteList,
-                  child: const Icon(Icons.warning_amber_rounded,
-                      color: Color.fromARGB(255, 255, 204, 0)))
-              .marginOnly(left: 5)
-        ]),
-        initialValue: _onlyIdWhiteList,
-        onToggle: (_) async {
-          update() async {
-            final onlyIdWhiteList = idWhitelistNotEmpty();
-            if (onlyIdWhiteList != _onlyIdWhiteList) {
-              setState(() {
-                _onlyIdWhiteList = onlyIdWhiteList;
-              });
+      if (!hobsonUiEnabled())
+        SettingsTile.switchTile(
+          title: Row(children: [
+            Expanded(child: Text(translate('Use ID whitelisting'))),
+            Offstage(
+                    offstage: !_onlyIdWhiteList,
+                    child: const Icon(Icons.warning_amber_rounded,
+                        color: Color.fromARGB(255, 255, 204, 0)))
+                .marginOnly(left: 5)
+          ]),
+          initialValue: _onlyIdWhiteList,
+          onToggle: (_) async {
+            update() async {
+              final onlyIdWhiteList = idWhitelistNotEmpty();
+              if (onlyIdWhiteList != _onlyIdWhiteList) {
+                setState(() {
+                  _onlyIdWhiteList = onlyIdWhiteList;
+                });
+              }
             }
-          }
 
-          changeIdWhiteList(callback: update);
-        },
-      ),
+            changeIdWhiteList(callback: update);
+          },
+        ),
       SettingsTile.switchTile(
         title: Text(translate('Adaptive bitrate')),
         initialValue: _enableAbr,
@@ -776,14 +789,27 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                     setState(callback);
                   });
                 }),
-          if (!_hideNetwork && !_hideProxy)
+          if (hobsonUiEnabled())
+            SettingsTile(
+              title: const Text('Advanced'),
+              leading: Icon(Icons.tune),
+              trailing: Icon(
+                  _showAdvanced ? Icons.expand_less : Icons.expand_more),
+              onPressed: (_) =>
+                  setState(() => _showAdvanced = !_showAdvanced),
+            ),
+          if ((!hobsonUiEnabled() || _showAdvanced) &&
+              !_hideNetwork &&
+              !_hideProxy)
             SettingsTile(
                 title: Text(translate('Socks5/Http(s) Proxy')),
                 leading: Icon(Icons.network_ping),
                 onPressed: (context) {
                   changeSocks5Proxy();
                 }),
-          if (isAndroid && !bind.isOutgoingOnly())
+          if ((!hobsonUiEnabled() || _showAdvanced) &&
+              isAndroid &&
+              !bind.isOutgoingOnly())
             SettingsTile(
                 title: Text(translate('Deploy')),
                 leading: Icon(Icons.cloud_upload),
@@ -867,7 +893,7 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                       });
                     },
             ),
-          if (!incomingOnly)
+          if (!incomingOnly && (!hobsonUiEnabled() || _showAdvanced))
             SettingsTile.switchTile(
               title: Text(translate('Enable IPv6 P2P connection')),
               initialValue: _enableIpv6Punch,
@@ -882,7 +908,7 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                       });
                     },
             ),
-          if (!incomingOnly)
+          if (!incomingOnly && (!hobsonUiEnabled() || _showAdvanced))
             SettingsTile.switchTile(
               title: Text(translate('Enable WebRTC P2P connection')),
               initialValue: _enableWebrtc,
@@ -1030,7 +1056,8 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                 ),
               SettingsTile(
                 title: Text(translate("Directory")),
-                description: Text(bind.mainVideoSaveDirectory(root: false)),
+                description: Text(_recordingDirectoryLabel(
+                    bind.mainVideoSaveDirectory(root: false))),
               ),
             ],
           ),
@@ -1060,16 +1087,22 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
           title: Text(translate("About")),
           tiles: [
             SettingsTile(
-                onPressed: (context) async {
-                  await launchUrl(Uri.parse(url));
-                },
+                onPressed: hobsonUiEnabled()
+                    ? null
+                    : (context) async {
+                        await launchUrl(Uri.parse(url));
+                      },
                 title: Text(translate("Version: ") + version),
                 value: Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text('rustdesk.com',
-                      style: TextStyle(
-                        decoration: TextDecoration.underline,
-                      )),
+                  child: Text(
+                    hobsonUiEnabled() ? kHobsonDisplayName : 'rustdesk.com',
+                    style: TextStyle(
+                      decoration: hobsonUiEnabled()
+                          ? null
+                          : TextDecoration.underline,
+                    ),
+                  ),
                 ),
                 leading: Icon(Icons.info)),
             SettingsTile(
@@ -1096,12 +1129,13 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                   child: Text(_myId),
                 ),
                 leading: Icon(Icons.perm_identity)),
-            SettingsTile(
-              title: Text(translate("Privacy Statement")),
-              onPressed: (context) =>
-                  launchUrlString('https://rustdesk.com/privacy.html'),
-              leading: Icon(Icons.privacy_tip),
-            )
+            if (!hobsonUiEnabled())
+              SettingsTile(
+                title: Text(translate("Privacy Statement")),
+                onPressed: (context) =>
+                    launchUrlString('https://rustdesk.com/privacy.html'),
+                leading: Icon(Icons.privacy_tip),
+              )
           ],
         ),
       ],

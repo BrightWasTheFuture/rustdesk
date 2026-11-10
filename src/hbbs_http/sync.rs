@@ -282,8 +282,13 @@ async fn start_hbbs_sync_async() {
 }
 
 fn heartbeat_url() -> String {
+    let api = Config::get_option("api-server");
+    // The rendezvous host is not an API server. OSS hbbs rejects /api/sysinfo.
+    if api.trim().is_empty() {
+        return "".to_owned();
+    }
     let url = crate::common::get_api_server(
-        Config::get_option("api-server"),
+        api,
         Config::get_option("custom-rendezvous-server"),
     );
     if url.is_empty() || crate::is_public(&url) {

@@ -16,6 +16,7 @@ class HobsonDevice {
     required this.lanPrefix,
     required this.enabled,
     required this.role,
+    required this.kind,
     required this.profile,
     required this.qualityFromPhone,
     required this.qualityFromDesktop,
@@ -30,6 +31,7 @@ class HobsonDevice {
   final String lanPrefix;
   final bool enabled;
   final String role;
+  final String kind;
   final String profile;
   final String qualityFromPhone;
   final String qualityFromDesktop;
@@ -37,6 +39,7 @@ class HobsonDevice {
   bool get hasId => id.isNotEmpty && enabled;
   bool get canWake => mac.isNotEmpty;
   bool get isHelper => role == 'helper';
+  bool get isServer => kind == 'server';
 
   static HobsonDevice fromJson(Map<String, dynamic> json) {
     return HobsonDevice(
@@ -49,6 +52,7 @@ class HobsonDevice {
       lanPrefix: (json['lan_prefix'] ?? '').toString(),
       enabled: json['enabled'] != false,
       role: (json['role'] ?? '').toString(),
+      kind: (json['kind'] ?? '').toString(),
       profile: (json['profile'] ?? '').toString(),
       qualityFromPhone: (json['quality_from_phone'] ?? '').toString(),
       qualityFromDesktop: (json['quality_from_desktop'] ?? '').toString(),
@@ -84,6 +88,12 @@ class HobsonDevices {
   final List<HobsonDevice> devices;
 
   static const asset = 'assets/hobson_devices.json';
+  static HobsonDevices? cached;
+
+  static bool isServerId(String id) {
+    final devices = cached?.devices ?? const <HobsonDevice>[];
+    return devices.any((device) => device.isServer && device.id == id);
+  }
 
   static Future<HobsonDevices> load() async {
     final raw = await rootBundle.loadString(asset);
@@ -92,7 +102,7 @@ class HobsonDevices {
         .whereType<Map<String, dynamic>>()
         .map(HobsonDevice.fromJson)
         .toList();
-    return HobsonDevices(
+    final loaded = HobsonDevices(
       displayName: (json['display_name'] ?? kHobsonDisplayName).toString(),
       relayByDefault: json['relay_by_default'] != false,
       privacyByDefault: json['privacy_on_trusted_windows'] == true,
@@ -105,5 +115,7 @@ class HobsonDevices {
       watchTitles: json['watch_titles'] == true,
       devices: list,
     );
+    cached = loaded;
+    return loaded;
   }
 }
