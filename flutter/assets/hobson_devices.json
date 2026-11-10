@@ -8,6 +8,11 @@
   "free_space_gb": 10,
   "keep_awake_processes": ["claude.exe", "cargo.exe"],
   "clipboard_history": 10,
+  "clipboard_sync": true,
+  "tile_previews": false,
+  "preview_seconds": 45,
+  "watch_titles": false,
+  "title_patterns": ["waiting for your input", "approve this action", "needs you"],
   "devices": [
     {
       "slot": "pc",

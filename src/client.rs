@@ -3856,9 +3856,10 @@ impl LoginConfigHandler {
         } else {
             Default::default()
         };
-        if hbb_common::config::LocalConfig::get_option("hobson-intent") == "unlock" {
+        let hobson_intent = hbb_common::config::LocalConfig::get_option("hobson-intent");
+        if hobson_intent == "unlock" || hobson_intent == "sync" {
             hbb_common::config::LocalConfig::set_option("hobson-intent".to_owned(), String::new());
-            display_name = format!("hobson-unlock:{display_name}");
+            display_name = format!("hobson-{hobson_intent}:{display_name}");
         }
         let mut lr = LoginRequest {
             username: pure_id,

@@ -126,6 +126,16 @@
             </intent-filter>
         </service>
 
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.hobson.remote.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/hobson_file_paths" />
+        </provider>
+
         <service
             android:name=".MainService"
             android:enabled="true"

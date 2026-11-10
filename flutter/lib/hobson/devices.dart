@@ -64,6 +64,10 @@ class HobsonDevices {
     required this.idleMinutes,
     required this.freeSpaceGb,
     required this.clipboardHistory,
+    required this.tilePreviews,
+    required this.previewSeconds,
+    required this.clipboardSync,
+    required this.watchTitles,
     required this.devices,
   });
 
@@ -73,6 +77,10 @@ class HobsonDevices {
   final int idleMinutes;
   final int freeSpaceGb;
   final int clipboardHistory;
+  final bool tilePreviews;
+  final int previewSeconds;
+  final bool clipboardSync;
+  final bool watchTitles;
   final List<HobsonDevice> devices;
 
   static const asset = 'assets/hobson_devices.json';
@@ -91,6 +99,10 @@ class HobsonDevices {
       idleMinutes: int.tryParse('${json['idle_disconnect_minutes']}') ?? 0,
       freeSpaceGb: int.tryParse('${json['free_space_gb']}') ?? 10,
       clipboardHistory: int.tryParse('${json['clipboard_history']}') ?? 10,
+      tilePreviews: json['tile_previews'] == true,
+      previewSeconds: int.tryParse('${json['preview_seconds']}') ?? 45,
+      clipboardSync: json['clipboard_sync'] != false,
+      watchTitles: json['watch_titles'] == true,
       devices: list,
     );
   }

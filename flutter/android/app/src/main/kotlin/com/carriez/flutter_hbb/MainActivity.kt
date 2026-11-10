@@ -341,6 +341,14 @@ class MainActivity : FlutterActivity() {
                 "hobson_take_panic" -> {
                     result.success(HobsonShare.takePanic())
                 }
+                "hobson_share_file" -> {
+                    val path = call.arguments as? String
+                    if (path.isNullOrEmpty()) {
+                        result.success(false)
+                    } else {
+                        result.success(HobsonShare.shareFile(this, path))
+                    }
+                }
                 "hobson_notify" -> {
                     val args = call.arguments as? Map<*, *>
                     val title = args?.get("title") as? String ?: "Hobson Remote"

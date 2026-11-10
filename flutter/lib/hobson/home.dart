@@ -9,13 +9,14 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
 import 'package:flutter_hbb/mobile/pages/settings_page.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
-import 'package:get/get.dart';
 
+import 'bus.dart';
 import 'command.dart';
 import 'config.dart';
 import 'devices.dart';
 import 'log_page.dart';
 import 'pending_send.dart';
+import 'sync.dart';
 import 'wake.dart';
 
 /// Three-device home. The old ID box stays in the tree for advanced settings;
@@ -33,6 +34,8 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
   String _error = '';
   final Map<String, bool?> _online = {};
   Timer? _poll;
+  Timer? _syncTimer;
+  int _syncSlot = 0;
   bool _relay = true;
   bool _privacy = false;
   final _prompt = TextEditingController();
@@ -49,12 +52,19 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
         replace: true);
     _load();
     _poll = Timer.periodic(const Duration(seconds: 15), (_) => _queryOnline());
+    HobsonBus.clips.addListener(_onBus);
+    HobsonBus.alert.addListener(_onBus);
+    HobsonBus.previews.addListener(_onBus);
   }
 
   @override
   void dispose() {
     _prompt.dispose();
     _poll?.cancel();
+    _syncTimer?.cancel();
+    HobsonBus.clips.removeListener(_onBus);
+    HobsonBus.alert.removeListener(_onBus);
+    HobsonBus.previews.removeListener(_onBus);
     WidgetsBinding.instance.removeObserver(this);
     platformFFI.unregisterEventHandler('callback_query_onlines', 'hobson-home');
     super.dispose();
@@ -91,6 +101,8 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
         _error = '';
         _clips = _readClips();
       });
+      if (_clips.isNotEmpty) HobsonBus.clips.value = _clips;
+      _startSync();
       _queryOnline();
       _takeSharedFiles();
       _takeSharedText();
@@ -274,7 +286,44 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
         .take(limit <= 0 ? 10 : limit)
         .toList();
     await bind.mainSetLocalOption(key: 'hobson-clips', value: jsonEncode(next));
+    HobsonBus.clips.value = next;
     if (mounted) setState(() => _clips = next);
+    if (_config?.clipboardSync == true) {
+      final pc = _pc();
+      if (pc != null) {
+        unawaited(HobsonSync.one(pc.id, relay: _relay, clips: next));
+      }
+    }
+  }
+
+  void _onBus() {
+    if (!mounted) return;
+    setState(() {
+      if (HobsonBus.clips.value.isNotEmpty) _clips = HobsonBus.clips.value;
+      if (HobsonBus.alert.value.isNotEmpty) _alert = HobsonBus.alert.value;
+    });
+  }
+
+  void _startSync() {
+    final config = _config;
+    if (config == null || (!config.clipboardSync && !config.tilePreviews)) {
+      return;
+    }
+    final seconds = config.previewSeconds <= 0 ? 45 : config.previewSeconds;
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(Duration(seconds: seconds), (_) => _syncOne());
+  }
+
+  void _syncOne() {
+    final config = _config;
+    if (config == null || !mounted) return;
+    final peers = config.devices
+        .where((device) => device.hasId && device.id != _myId && _online[device.id] != false)
+        .toList();
+    if (peers.isEmpty) return;
+    final device = peers[_syncSlot % peers.length];
+    _syncSlot += 1;
+    unawaited(HobsonSync.one(device.id, relay: _relay, clips: _clips));
   }
 
   Future<void> _loadAlert() async {
@@ -592,6 +641,18 @@ class _HobsonHomeState extends State<HobsonHome> with WidgetsBindingObserver {
                 _status(online, device, mine),
               ],
             ),
+            if (_config?.tilePreviews == true && HobsonBus.previews.value[device.id] != null) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.memory(
+                  HobsonBus.previews.value[device.id]!,
+                  height: 72,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Text(!device.enabled
                 ? 'Disabled until you turn it on in hobson_devices.json'

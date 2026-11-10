@@ -19,6 +19,10 @@
 
 #[path = "log.rs"]
 mod conn_log;
+#[cfg(windows)]
+mod banner;
+#[cfg(windows)]
+mod preview;
 
 use base::config::keys;
 use hbb_common::{
@@ -54,6 +58,20 @@ struct File {
     #[serde(default = "default_clipboard_history")]
     clipboard_history: usize,
     #[serde(default)]
+    tile_previews: bool,
+    #[allow(dead_code)]
+    #[serde(default = "default_preview_seconds")]
+    preview_seconds: u64,
+    #[allow(dead_code)]
+    #[serde(default = "default_true")]
+    clipboard_sync: bool,
+    #[allow(dead_code)]
+    #[serde(default)]
+    watch_titles: bool,
+    #[allow(dead_code)]
+    #[serde(default)]
+    title_patterns: Vec<String>,
+    #[serde(default)]
     devices: Vec<Device>,
 }
 
@@ -63,6 +81,10 @@ fn default_free_gb() -> u64 {
 
 fn default_clipboard_history() -> usize {
     10
+}
+
+fn default_preview_seconds() -> u64 {
+    45
 }
 
 fn default_app_name() -> String {
@@ -128,6 +150,11 @@ fn file() -> &'static File {
                 free_space_gb: default_free_gb(),
                 keep_awake_processes: Vec::new(),
                 clipboard_history: default_clipboard_history(),
+                tile_previews: false,
+                preview_seconds: default_preview_seconds(),
+                clipboard_sync: true,
+                watch_titles: false,
+                title_patterns: Vec::new(),
                 devices: Vec::new(),
             }
         }
@@ -259,6 +286,7 @@ pub fn apply_policy() {
         Config::set_option("auto-disconnect-timeout".into(), minutes.to_string());
     }
     start_keep_awake();
+    start_title_watch();
     log::info!(
         "{} ready. allowlist={} relay_default={} trust_secret={}",
         file().display_name,
@@ -405,6 +433,195 @@ fn agent_running(names: &[String]) -> bool {
         .any(|name| text.contains(&name.to_ascii_lowercase()))
 }
 
+pub fn tile_previews() -> bool {
+    file().tile_previews
+}
+
+#[allow(dead_code)]
+pub fn clipboard_sync_enabled() -> bool {
+    file().clipboard_sync
+}
+
+#[allow(dead_code)]
+pub fn preview_seconds() -> u64 {
+    let seconds = file().preview_seconds;
+    if seconds == 0 {
+        default_preview_seconds()
+    } else {
+        seconds
+    }
+}
+
+pub fn capture_primary_jpeg() -> Option<Vec<u8>> {
+    #[cfg(windows)]
+    {
+        preview::primary_jpeg(320)
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+pub fn window_titles() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        preview::window_titles()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+pub fn capture_named_window(title: &str) -> Option<Vec<u8>> {
+    #[cfg(windows)]
+    {
+        preview::window_jpeg(title, 480)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = title;
+        None
+    }
+}
+
+pub fn helper_arrived(label: &str) {
+    #[cfg(windows)]
+    banner::show(label);
+    #[cfg(not(windows))]
+    {
+        let _ = label;
+    }
+}
+
+pub fn helper_left() {
+    #[cfg(windows)]
+    banner::hide();
+}
+
+pub fn title_matches(title: &str, patterns: &[String]) -> bool {
+    let lower = title.to_lowercase();
+    patterns.iter().any(|pattern| {
+        let pattern = pattern.trim().to_lowercase();
+        !pattern.is_empty() && lower.contains(&pattern)
+    })
+}
+
+pub fn merge_clip_lists(incoming: &[String], existing: &[String], limit: usize) -> Vec<String> {
+    let limit = limit.max(1);
+    let mut merged = Vec::new();
+    for text in incoming.iter().chain(existing.iter()) {
+        let text = text.trim();
+        if text.is_empty() || merged.iter().any(|have: &String| have == text) {
+            continue;
+        }
+        merged.push(text.to_owned());
+        if merged.len() == limit {
+            break;
+        }
+    }
+    merged
+}
+
+pub fn ingest_clips(body: &str) -> String {
+    let incoming = serde_json::from_str::<Vec<String>>(body).unwrap_or_default();
+    let path = Config::path("hobson-clips.json");
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let existing = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Vec<String>>(&bytes).ok())
+        .unwrap_or_default();
+    let merged = merge_clip_lists(&incoming, &existing, file().clipboard_history);
+    let _ = std::fs::write(&path, serde_json::to_vec(&merged).unwrap_or_default());
+    serde_json::to_string(&merged).unwrap_or_else(|_| "[]".to_owned())
+}
+
+pub fn latest_alert() -> String {
+    let path = Config::path("hobson-alerts.json");
+    let Ok(bytes) = std::fs::read(path) else {
+        return String::new();
+    };
+    let Ok(events) = serde_json::from_slice::<Vec<serde_json::Value>>(&bytes) else {
+        return String::new();
+    };
+    events
+        .iter()
+        .rev()
+        .find_map(|event| {
+            if event.get("state").and_then(|state| state.as_str()) == Some("open") {
+                event
+                    .get("text")
+                    .and_then(|text| text.as_str())
+                    .map(|text| text.replace(['\n', '\r'], " "))
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default()
+}
+
+pub fn ack_alert() {
+    let path = Config::path("hobson-alerts.json");
+    let Ok(bytes) = std::fs::read(&path) else {
+        return;
+    };
+    let Ok(mut events) = serde_json::from_slice::<Vec<serde_json::Value>>(&bytes) else {
+        return;
+    };
+    if let Some(event) = events.iter_mut().rev().find(|event| {
+        event.get("state").and_then(|state| state.as_str()) == Some("open")
+    }) {
+        event["state"] = serde_json::Value::String("done".to_owned());
+    }
+    let _ = std::fs::write(path, serde_json::to_vec(&events).unwrap_or_default());
+}
+
+fn start_title_watch() {
+    #[cfg(windows)]
+    {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static STARTED: AtomicBool = AtomicBool::new(false);
+        if !file().watch_titles || STARTED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let patterns = if file().title_patterns.is_empty() {
+            vec![
+                "waiting for your input".to_owned(),
+                "approve this action".to_owned(),
+                "needs you".to_owned(),
+            ]
+        } else {
+            file().title_patterns.clone()
+        };
+        std::thread::spawn(move || {
+            let mut seen: Vec<(String, std::time::Instant)> = Vec::new();
+            loop {
+                for title in window_titles() {
+                    if !title_matches(&title, &patterns) {
+                        continue;
+                    }
+                    let now = std::time::Instant::now();
+                    let recent = seen.iter().any(|(have, at)| {
+                        have == &title && now.duration_since(*at).as_secs() < 180
+                    });
+                    if recent {
+                        continue;
+                    }
+                    seen.retain(|(_, at)| now.duration_since(*at).as_secs() < 180);
+                    seen.push((title.clone(), now));
+                    let text = format!("Agent needs you: {title}");
+                    record_alert(&text);
+                    notify(&text);
+                }
+                std::thread::sleep(std::time::Duration::from_secs(5));
+            }
+        });
+    }
+}
+
 fn notify(text: &str) {
     #[cfg(windows)]
     {
@@ -460,5 +677,20 @@ mod tests {
             whitelist_value(),
             "526130151,199304064,1084254837"
         );
+    }
+
+    #[test]
+    fn clipboard_merge_keeps_newest_unique_items() {
+        let merged = merge_clip_lists(
+            &["newest".into(), "kept".into()],
+            &["kept".into(), "older".into(), " ".into()],
+            3,
+        );
+        assert_eq!(merged, vec!["newest", "kept", "older"]);
+        assert!(title_matches(
+            "Claude Code — waiting for your input",
+            &["waiting for your input".into()]
+        ));
+        assert!(!title_matches("cargo build", &["waiting for your input".into()]));
     }
 }

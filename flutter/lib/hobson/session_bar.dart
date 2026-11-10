@@ -16,6 +16,9 @@ class HobsonSessionBar extends StatelessWidget {
     required this.onPrivacy,
     required this.onClose,
     required this.onScreenshot,
+    required this.onMonitors,
+    required this.onLowData,
+    required this.onWindow,
   });
 
   final bool privacyOn;
@@ -26,6 +29,9 @@ class HobsonSessionBar extends StatelessWidget {
   final VoidCallback onPrivacy;
   final VoidCallback onClose;
   final VoidCallback onScreenshot;
+  final VoidCallback onMonitors;
+  final VoidCallback onLowData;
+  final VoidCallback onWindow;
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +82,19 @@ class HobsonSessionBar extends StatelessWidget {
               tooltip: 'Screenshot',
               icon: Icons.photo_camera_outlined,
               onPressed: onScreenshot,
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              onSelected: (value) {
+                if (value == 'monitors') onMonitors();
+                if (value == 'low') onLowData();
+                if (value == 'window') onWindow();
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'monitors', child: Text('Monitors')),
+                PopupMenuItem(value: 'low', child: Text('Low data')),
+                PopupMenuItem(value: 'window', child: Text('One window')),
+              ],
             ),
             _button(
               tooltip: 'Disconnect',

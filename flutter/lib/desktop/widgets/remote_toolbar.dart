@@ -8,7 +8,10 @@ import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/common/widgets/keyboard_shortcuts/display.dart';
 import 'package:flutter_hbb/common/widgets/toolbar.dart';
 import 'package:flutter_hbb/hobson/config.dart';
+import 'package:flutter_hbb/hobson/monitors.dart';
 import 'package:flutter_hbb/hobson/session_bar.dart';
+import 'package:flutter_hbb/hobson/shots.dart';
+import 'package:flutter_hbb/hobson/window_view.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/consts.dart';
@@ -833,11 +836,21 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
               bind.sessionCtrlAltDel(sessionId: widget.ffi.sessionId),
           onPrivacy: () => _hobsonTogglePrivacy(widget.ffi, widget.id, privacyOn),
           onClose: () => closeConnection(id: widget.id),
-          onScreenshot: () => bind.sessionTakeScreenshot(
+          onScreenshot: () {
+            HobsonShots.shareNext = true;
+            final display = widget.ffi.ffiModel.pi.currentDisplay;
+            bind.sessionTakeScreenshot(
               sessionId: widget.ffi.sessionId,
-              display: widget.ffi.ffiModel.pi.currentDisplay < 0
-                  ? 0
-                  : widget.ffi.ffiModel.pi.currentDisplay),
+              display: display < 0 ? 0 : display,
+            );
+          },
+          onMonitors: () => showHobsonMonitors(context, widget.ffi),
+          onLowData: () {
+            bind.sessionSetImageQuality(
+                sessionId: widget.ffi.sessionId, value: 'low');
+            bind.sessionSetCustomFps(sessionId: widget.ffi.sessionId, fps: 2);
+          },
+          onWindow: () => showHobsonWindow(context, widget.ffi),
         );
       });
     }

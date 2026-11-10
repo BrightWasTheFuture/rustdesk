@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.FileProvider
 import java.io.File
 
 /**
@@ -55,6 +56,23 @@ object HobsonShare {
         if (!panic) return ""
         panic = false
         return "panic"
+    }
+
+    fun shareFile(context: Context, path: String): Boolean {
+        val file = File(path)
+        if (!file.exists()) return false
+        return try {
+            val uri = FileProvider.getUriForFile(context, "com.hobson.remote.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(send, "Share screenshot").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun take(): List<String> {

@@ -39,8 +39,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:vector_math/vector_math.dart' show Vector2;
 
 import '../common.dart';
+import '../hobson/bus.dart';
 import '../hobson/config.dart';
 import '../hobson/session_hooks.dart';
+import '../hobson/shots.dart';
+import '../hobson/shot_action.dart'
+    if (dart.library.html) '../hobson/shot_action_web.dart';
 import '../utils/image.dart' as img;
 import '../common/widgets/dialog.dart';
 import 'input_model.dart';
@@ -362,8 +366,10 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'permission') {
         updatePermission(evt, peerId);
       } else if (name == 'chat_client_mode') {
-        parent.target?.chatModel
-            .receive(ChatModel.clientModeID, evt['text'] ?? '');
+        final text = (evt['text'] ?? '').toString();
+        if (!HobsonBus.ingest(peerId, text)) {
+          parent.target?.chatModel.receive(ChatModel.clientModeID, text);
+        }
       } else if (name == 'chat_server_mode') {
         parent.target?.chatModel
             .receive(int.parse(evt['id'] as String), evt['text'] ?? '');
@@ -468,7 +474,7 @@ class FfiModel with ChangeNotifier {
       } else if (name == "printer_request") {
         _handlePrinterRequest(evt, sessionId, peerId);
       } else if (name == 'screenshot') {
-        _handleScreenshot(evt, sessionId, peerId);
+        await _handleScreenshot(evt, sessionId, peerId);
       } else if (name == 'exit_relative_mouse_mode') {
         // Handle exit shortcut from rdev grab loop (Ctrl+Alt on Win/Linux, Cmd+G on macOS)
         parent.target?.inputModel.exitRelativeMouseModeWithKeyRelease();
@@ -483,8 +489,8 @@ class FfiModel with ChangeNotifier {
     };
   }
 
-  _handleScreenshot(
-      Map<String, dynamic> evt, SessionID sessionId, String peerId) {
+  Future<void> _handleScreenshot(
+      Map<String, dynamic> evt, SessionID sessionId, String peerId) async {
     timerScreenshot?.cancel();
     timerScreenshot = null;
     final msg = evt['msg'] ?? '';
@@ -492,7 +498,15 @@ class FfiModel with ChangeNotifier {
     final msgBoxTitle = 'Take screenshot';
     final dialogManager = parent.target!.dialogManager;
     if (msg.isNotEmpty) {
+      final pending = HobsonShots.pending;
+      if (pending != null) {
+        HobsonShots.pending = null;
+        if (!pending.isCompleted) pending.complete(null);
+        return;
+      }
       msgBox(sessionId, msgBoxType, msgBoxTitle, msg, '', dialogManager);
+    } else if (await hobsonTakeShot(sessionId)) {
+      return;
     } else {
       final msgBoxText = 'screenshot-action-tip';
 
